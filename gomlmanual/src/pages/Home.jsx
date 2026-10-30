@@ -61,7 +61,7 @@ function Home() {
                     <strong>Repositorio GitHub</strong>
                 </a>
                 <a
-                    href="https://alonso-space.github.io/AlonsoSpace/"
+                    href="https://alonso-space.github.io/alonso-space/"
                     className="action-card"
                     target="_blank"
                     rel="noopener noreferrer"
