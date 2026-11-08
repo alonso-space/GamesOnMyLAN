@@ -14,206 +14,209 @@ const DEFAULT_THUMBNAIL = path.join(process.cwd(), 'src', 'public', 'img', 'defa
 const MAX_FILES = 10000;
 const MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
 
-const storageService = {
-  async extractGame(zipFile, id_game, entry_file) {
-    const gameFolder = path.join(DATA_PATH, 'games', String(id_game));
-    await fsp.mkdir(gameFolder, { recursive: true });
+// ---------- Funciones privadas (no se exportan) ----------
 
-    await this._extractZipSafely(zipFile.path, gameFolder);
+// Extracción con protección Zip Slip, reutilizable para juegos nuevos y reemplazos.
+async function extractZipSafely(zipFilePath, destFolder) {
+  const resolvedRoot = path.resolve(destFolder);
+  const directory = await unzipper.Open.file(zipFilePath);
 
-    await this.normalizeGameFolder(gameFolder, entry_file);
-    await fsp.unlink(zipFile.path);
-    return gameFolder;
-  },
+  // Capa 2: rechazo rápido según lo que el zip DECLARA
+  if (directory.files.length > MAX_FILES) {
+    throw new Error('ZIP con demasiados archivos');
+  }
 
-  // Para reemplazar archivos de un juego que YA existe: extrae a una carpeta
-  // temporal primero. Solo si todo sale bien, borra la carpeta real y pone
-  // la nueva en su lugar. Si algo falla, el juego actual queda intacto.
-  async replaceGameFiles(id_game, zipFile, entry_file) {
-    const finalFolder = path.join(DATA_PATH, 'games', String(id_game));
-    const stagingFolder = path.join(DATA_PATH, 'games', `${id_game}_staging_${Date.now()}`);
+  const declaredTotal = directory.files.reduce((sum, f) => sum + (f.uncompressedSize || 0), 0);
 
-    await fsp.mkdir(stagingFolder, { recursive: true });
+  if (declaredTotal > MAX_TOTAL_BYTES) {
+    throw new Error('ZIP demasiado grande al descomprimir');
+  }
 
-    try {
-      await this._extractZipSafely(zipFile.path, stagingFolder);
-      await this.normalizeGameFolder(stagingFolder, entry_file);
-    } catch (error) {
-      await fsp.rm(stagingFolder, { recursive: true, force: true });
+  // Capa 3: conteo de bytes REALES (el tamaño declarado se puede falsificar)
+  let total = 0;
+
+  for (const file of directory.files) {
+    const destPath = path.resolve(path.join(destFolder, file.path));
+
+    if (destPath !== resolvedRoot && !destPath.startsWith(resolvedRoot + path.sep)) {
+      throw new Error(`ZIP inválido: entrada fuera de la carpeta destino (${file.path})`);
+    }
+
+    if (file.type === 'Directory') {
+      await fsp.mkdir(destPath, { recursive: true });
+      continue;
+    }
+
+    await fsp.mkdir(path.dirname(destPath), { recursive: true });
+
+    const declaredSize = file.uncompressedSize || 0;
+    let fileBytes = 0;
+
+    await pipeline(
+      file.stream(),
+      new Transform({
+        transform(chunk, enc, cb) {
+          fileBytes += chunk.length;
+          total += chunk.length;
+
+          if (fileBytes > declaredSize) {
+            return cb(new Error('ZIP inválido: un archivo excede su tamaño declarado'));
+          }
+
+          if (total > MAX_TOTAL_BYTES) {
+            return cb(new Error('ZIP demasiado grande al descomprimir'));
+          }
+
+          cb(null, chunk);
+        },
+      }),
+      fs.createWriteStream(destPath),
+    );
+  }
+}
+
+// Respaldo: el middleware ya corta las subidas que superan el límite
+function assertImageSize(file, label) {
+  if (file.size > MAX_IMAGE_BYTES) {
+    const err = new Error(`${label} no puede pesar más de ${MAX_IMAGE_BYTES / (1024 * 1024)} MB`);
+    err.status = 400;
+    throw err;
+  }
+}
+
+async function normalizeGameFolder(gameFolder, entry_file) {
+  const root = path.resolve(gameFolder);
+  const target = path.resolve(root, entry_file);
+
+  if (!target.startsWith(root + path.sep)) {
+    throw new Error('Archivo principal inválido');
+  }
+
+  try {
+    await fsp.access(path.join(gameFolder, entry_file));
+    return;
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
       throw error;
     }
+  }
 
-    await fsp.rm(finalFolder, { recursive: true, force: true });
-    await fsp.rename(stagingFolder, finalFolder);
-    await fsp.unlink(zipFile.path);
+  const entries = await fsp.readdir(gameFolder, { withFileTypes: true });
 
-    return finalFolder;
-  },
+  if (entries.length !== 1 || !entries[0].isDirectory()) {
+    throw new Error('El archivo principal no se encontró en la raíz del ZIP.');
+  }
 
-  // Extracción con protección Zip Slip (la misma lógica de antes,
-  // ahora reutilizable tanto para juegos nuevos como para reemplazos).
-  async _extractZipSafely(zipFilePath, destFolder) {
-    const resolvedRoot = path.resolve(destFolder);
-    const directory = await unzipper.Open.file(zipFilePath);
+  const innerFolder = path.join(gameFolder, entries[0].name);
 
-    // Capa 2: rechazo rápido según lo que el zip DECLARA
-    if (directory.files.length > MAX_FILES) {
-      throw new Error('ZIP con demasiados archivos');
-    }
+  try {
+    await fsp.access(path.join(innerFolder, entry_file));
+  } catch {
+    throw new Error('El archivo principal no existe dentro del ZIP.');
+  }
 
-    const declaredTotal = directory.files.reduce((sum, f) => sum + (f.uncompressedSize || 0), 0);
+  // Renombrar la carpeta contenedora a un nombre temporal para que ningún
+  // hijo (ej: games/games) choque con el nombre de su propio padre.
+  const tempFolder = path.join(gameFolder, `__normalize_${Date.now()}`);
+  await fsp.rename(innerFolder, tempFolder);
 
-    if (declaredTotal > MAX_TOTAL_BYTES) {
-      throw new Error('ZIP demasiado grande al descomprimir');
-    }
+  const innerEntries = await fsp.readdir(tempFolder);
 
-    // Capa 3: conteo de bytes REALES (el tamaño declarado se puede falsificar)
-    let total = 0;
+  for (const entry of innerEntries) {
+    await fsp.rename(path.join(tempFolder, entry), path.join(gameFolder, entry));
+  }
+  await fsp.rmdir(tempFolder);
+}
 
-    for (const file of directory.files) {
-      const destPath = path.resolve(path.join(destFolder, file.path));
+// ---------- Funciones públicas ----------
 
-      if (destPath !== resolvedRoot && !destPath.startsWith(resolvedRoot + path.sep)) {
-        throw new Error(`ZIP inválido: entrada fuera de la carpeta destino (${file.path})`);
-      }
+async function extractGame(zipFile, id_game, entry_file) {
+  const gameFolder = path.join(DATA_PATH, 'games', String(id_game));
+  await fsp.mkdir(gameFolder, { recursive: true });
 
-      if (file.type === 'Directory') {
-        await fsp.mkdir(destPath, { recursive: true });
-        continue;
-      }
+  await extractZipSafely(zipFile.path, gameFolder);
 
-      await fsp.mkdir(path.dirname(destPath), { recursive: true });
+  await normalizeGameFolder(gameFolder, entry_file);
+  await fsp.unlink(zipFile.path);
+  return gameFolder;
+}
 
-      const declaredSize = file.uncompressedSize || 0;
-      let fileBytes = 0;
+// Para reemplazar archivos de un juego que YA existe: extrae a una carpeta
+// temporal primero. Solo si todo sale bien, borra la carpeta real y pone
+// la nueva en su lugar. Si algo falla, el juego actual queda intacto.
+async function replaceGameFiles(id_game, zipFile, entry_file) {
+  const finalFolder = path.join(DATA_PATH, 'games', String(id_game));
+  const stagingFolder = path.join(DATA_PATH, 'games', `${id_game}_staging_${Date.now()}`);
 
-      await pipeline(
-        file.stream(),
-        new Transform({
-          transform(chunk, enc, cb) {
-            fileBytes += chunk.length;
-            total += chunk.length;
+  await fsp.mkdir(stagingFolder, { recursive: true });
 
-            if (fileBytes > declaredSize) {
-              return cb(new Error('ZIP inválido: un archivo excede su tamaño declarado'));
-            }
+  try {
+    await extractZipSafely(zipFile.path, stagingFolder);
+    await normalizeGameFolder(stagingFolder, entry_file);
+  } catch (error) {
+    await fsp.rm(stagingFolder, { recursive: true, force: true });
+    throw error;
+  }
 
-            if (total > MAX_TOTAL_BYTES) {
-              return cb(new Error('ZIP demasiado grande al descomprimir'));
-            }
+  await fsp.rm(finalFolder, { recursive: true, force: true });
+  await fsp.rename(stagingFolder, finalFolder);
+  await fsp.unlink(zipFile.path);
 
-            cb(null, chunk);
-          },
-        }),
-        fs.createWriteStream(destPath),
-      );
-    }
-  },
+  return finalFolder;
+}
 
-  async storeThumbnail(thumbnailFile, id_game) {
-    if (thumbnailFile) {
-      this._assertImageSize(thumbnailFile, 'La miniatura');
-      await assertPngFile(thumbnailFile.path);
-    }
+async function storeThumbnail(thumbnailFile, id_game) {
+  if (thumbnailFile) {
+    assertImageSize(thumbnailFile, 'La miniatura');
+    await assertPngFile(thumbnailFile.path);
+  }
 
-    const thumbnailFolder = path.join(DATA_PATH, 'thumbnails');
-    await fsp.mkdir(thumbnailFolder, { recursive: true });
+  const thumbnailFolder = path.join(DATA_PATH, 'thumbnails');
+  await fsp.mkdir(thumbnailFolder, { recursive: true });
 
-    const thumbnailPath = path.join(thumbnailFolder, `${id_game}.png`);
+  const thumbnailPath = path.join(thumbnailFolder, `${id_game}.png`);
 
-    if (thumbnailFile) {
-      await moveFile(thumbnailFile.path, thumbnailPath);
-    } else {
-      await fsp.copyFile(DEFAULT_THUMBNAIL, thumbnailPath);
-    }
+  if (thumbnailFile) {
+    await moveFile(thumbnailFile.path, thumbnailPath);
+  } else {
+    await fsp.copyFile(DEFAULT_THUMBNAIL, thumbnailPath);
+  }
 
-    return thumbnailPath;
-  },
+  return thumbnailPath;
+}
 
-  // Foto de perfil: data/avatars/<id_usuario>.png (sobrescribe la anterior)
-  async storeAvatar(avatarFile, id_user) {
-    this._assertImageSize(avatarFile, 'La foto de perfil');
-    await assertPngFile(avatarFile.path);
+// Foto de perfil: data/avatars/<id_usuario>.png (sobrescribe la anterior)
+async function storeAvatar(avatarFile, id_user) {
+  assertImageSize(avatarFile, 'La foto de perfil');
+  await assertPngFile(avatarFile.path);
 
-    const avatarFolder = path.join(DATA_PATH, 'avatars');
-    await fsp.mkdir(avatarFolder, { recursive: true });
+  const avatarFolder = path.join(DATA_PATH, 'avatars');
+  await fsp.mkdir(avatarFolder, { recursive: true });
 
-    const avatarPath = path.join(avatarFolder, `${id_user}.png`);
-    await moveFile(avatarFile.path, avatarPath);
+  const avatarPath = path.join(avatarFolder, `${id_user}.png`);
+  await moveFile(avatarFile.path, avatarPath);
 
-    return avatarPath;
-  },
+  return avatarPath;
+}
 
-  // Respaldo: el middleware ya corta las subidas que superan el límite
-  _assertImageSize(file, label) {
-    if (file.size > MAX_IMAGE_BYTES) {
-      const err = new Error(`${label} no puede pesar más de ${MAX_IMAGE_BYTES / (1024 * 1024)} MB`);
-      err.status = 400;
-      throw err;
-    }
-  },
+async function deleteGameFiles(id_game) {
+  const gameFolder = path.join(DATA_PATH, 'games', String(id_game));
+  const thumbnailPath = path.join(DATA_PATH, 'thumbnails', `${id_game}.png`);
 
-  async normalizeGameFolder(gameFolder, entry_file) {
-    const root = path.resolve(gameFolder);
-    const target = path.resolve(root, entry_file);
+  await fsp.rm(gameFolder, { recursive: true, force: true });
+  await fsp.rm(thumbnailPath, { force: true });
+}
 
-    if (!target.startsWith(root + path.sep)) {
-      throw new Error('Archivo principal inválido');
-    }
+async function deleteAvatar(id_user) {
+  const avatarPath = path.join(DATA_PATH, 'avatars', `${id_user}.png`);
+  await fsp.rm(avatarPath, { force: true });
+}
 
-    try {
-      await fsp.access(path.join(gameFolder, entry_file));
-      return;
-    } catch (error) {
-      if (error.code !== 'ENOENT') {
-        throw error;
-      }
-    }
-
-    const entries = await fsp.readdir(gameFolder, { withFileTypes: true });
-
-    if (entries.length !== 1 || !entries[0].isDirectory()) {
-      throw new Error('El archivo principal no se encontró en la raíz del ZIP.');
-    }
-
-    const innerFolder = path.join(gameFolder, entries[0].name);
-
-    try {
-      await fsp.access(path.join(innerFolder, entry_file));
-    } catch {
-      throw new Error('El archivo principal no existe dentro del ZIP.');
-    }
-
-    // Renombrar la carpeta contenedora a un nombre temporal para que ningún
-    // hijo (ej: games/games) choque con el nombre de su propio padre.
-    const tempFolder = path.join(gameFolder, `__normalize_${Date.now()}`);
-    await fsp.rename(innerFolder, tempFolder);
-
-    const innerEntries = await fsp.readdir(tempFolder);
-
-    for (const entry of innerEntries) {
-      await fsp.rename(path.join(tempFolder, entry), path.join(gameFolder, entry));
-    }
-    await fsp.rmdir(tempFolder);
-  },
-
-  async deleteGameFiles(id_game) {
-    const gameFolder = path.join(DATA_PATH, 'games', String(id_game));
-    const thumbnailPath = path.join(DATA_PATH, 'thumbnails', `${id_game}.png`);
-
-    await fsp.rm(gameFolder, { recursive: true, force: true });
-    await fsp.rm(thumbnailPath, { force: true });
-  },
-
-  async deleteAvatar(id_user) {
-    const avatarPath = path.join(DATA_PATH, 'avatars', `${id_user}.png`);
-    await fsp.rm(avatarPath, { force: true });
-  },
-
-  async deleteGameFolder(id_game) {
-    const gameFolder = path.join(DATA_PATH, 'games', String(id_game));
-    await fsp.rm(gameFolder, { recursive: true, force: true });
-  },
+export default {
+  extractGame,
+  replaceGameFiles,
+  storeThumbnail,
+  storeAvatar,
+  deleteGameFiles,
+  deleteAvatar,
 };
-
-export default storageService;

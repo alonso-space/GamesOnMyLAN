@@ -1,6 +1,6 @@
 import express from 'express';
 import usersController from '../controllers/usersController.js';
-import { requireGuestRegister } from '../middlewares/settings.js';
+import { requireGuestRegister, requireLimitUsers } from '../middlewares/settings.js';
 import { registerLimiter, passwordChangeLimiter } from '../middlewares/rateLimit.js';
 import {
   requireLogin,
@@ -13,7 +13,7 @@ import { uploadAvatar } from '../middlewares/upload.js';
 const router = express.Router();
 
 router.get('/register', requireGuestRegister, usersController.showRegister);
-router.post('/register', requireGuestRegister, registerLimiter, usersController.register);
+router.post('/register', requireGuestRegister, requireLimitUsers, registerLimiter, usersController.register);
 
 router.get('/profile', requireLoginPage, usersController.redirectToOwnProfile);
 router.get('/profile/:userId', usersController.showProfile);

@@ -150,7 +150,19 @@ async function changePassword(userId, currentPassword, newPassword) {
   return updated.rowCount === 0 ? 'conflict' : 'ok';
 }
 
+async function countAllUsers() {
+  const result = await pool.query(
+    `
+        SELECT COUNT(*) AS total_users
+        FROM users;
+        `,
+  );
+
+  return result.rows[0].total_users;
+}
+
 export default {
+  countAllUsers,
   registerUser,
   getUserById,
   getAllUsers,

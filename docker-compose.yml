@@ -17,6 +17,7 @@ services:
 
   goml:
     image: goml:1.0
+    init: true
     restart: unless-stopped
     depends_on:
       db:
@@ -36,6 +37,8 @@ services:
       GAMES_ORIGIN: ${GAMES_ORIGIN:-}
       OWNER_USER: ${OWNER_USER:-}
       OWNER_PASSWORD: ${OWNER_PASSWORD:-}
+      LIMIT_USERS: ${LIMIT_USERS:-false}
+      MAX_USERS: ${MAX_USERS:-100}
     ports:
       - "${APP_PORT:-3000}:${APP_PORT:-3000}"
       - "${GAMES_PORT:-3001}:${GAMES_PORT:-3001}"

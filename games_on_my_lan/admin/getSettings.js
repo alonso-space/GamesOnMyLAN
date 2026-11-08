@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 try {
-  process.loadEnvFile(path.join(__dirname, '..', '.env'));
+  process.loadEnvFile(path.join(__dirname, '..', '..', '.env'));
 } catch (error) {
   if (error.code !== 'ENOENT') {
     throw error;
@@ -43,6 +43,9 @@ const settings = {
 
   public_mode: toBoolean(read('PUBLIC_MODE')),
   games_origin: read('GAMES_ORIGIN'),
+
+  limit_users: toBoolean(read('LIMIT_USERS')),
+  max_users: toNumber(read('MAX_USERS')),
 };
 
 export default settings;
