@@ -48,4 +48,8 @@ const settings = {
   max_users: toNumber(read('MAX_USERS')),
 };
 
+if (settings.limit_users && !(Number.isInteger(settings.max_users) && settings.max_users > 0)) {
+  throw new Error('LIMIT_USERS=true requiere que MAX_USERS sea un entero mayor que 0');
+}
+
 export default settings;

@@ -93,9 +93,7 @@ async function askBoolean(question, defaultValue = true) {
   const defaultText = defaultValue ? 'S/n' : 's/N';
 
   while (true) {
-    const value = (await ask(`${question} [${defaultText}]: `))
-      .trim()
-      .toLowerCase();
+    const value = (await ask(`${question} [${defaultText}]: `)).trim().toLowerCase();
 
     if (value === '') return defaultValue;
     if (['s', 'si', 'sí', 'y', 'yes'].includes(value)) return true;
@@ -285,9 +283,7 @@ function writeEnvFile(settings = {}) {
   addVariable('GAMES_ORIGIN');
 
   // Conserva cualquier variable adicional que ya existiera en el .env.
-  const extraVariables = Object.keys(values).filter(
-    (name) => !written.has(name),
-  );
+  const extraVariables = Object.keys(values).filter((name) => !written.has(name));
 
   if (extraVariables.length > 0) {
     lines.push('');
@@ -336,24 +332,15 @@ Presiona ENTER para utilizar el valor indicado entre corchetes.
   const db_database = (await askDefault('Base de datos', 'goml_db')).trim();
 
   if (!db_host || !db_user || !db_database) {
-    throw new Error(
-      'El host, usuario y nombre de la base de datos son obligatorios.',
-    );
+    throw new Error('El host, usuario y nombre de la base de datos son obligatorios.');
   }
 
   console.log('');
 
   const app_port = await askPort('Puerto de GamesOnMyLAN', 3000);
-  const games_port = await askPort(
-    'Puerto del servidor de juegos',
-    3001,
-    app_port,
-  );
+  const games_port = await askPort('Puerto del servidor de juegos', 3001, app_port);
 
-  const guest_register = await askBoolean(
-    '¿Permitir registro de invitados?',
-    true,
-  );
+  const guest_register = await askBoolean('¿Permitir registro de invitados?', true);
 
   const host_ip = detectHostIp();
 
@@ -532,10 +519,7 @@ se conservaron en el archivo .env.
     return;
   }
 
-  const createOwner = await askBoolean(
-    '¿Crear este usuario como propietario inicial?',
-    true,
-  );
+  const createOwner = await askBoolean('¿Crear este usuario como propietario inicial?', true);
 
   if (!createOwner) {
     console.log(`

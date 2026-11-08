@@ -18,9 +18,7 @@ export async function requireLimitUsers(req, res, next) {
     const currentUsers = await usersService.countAllUsers();
 
     if (currentUsers >= settings.max_users) {
-      return res.status(403).send(
-        'Número máximo de usuarios alcanzado'
-      );
+      return res.status(403).send('Número máximo de usuarios alcanzado');
     }
 
     next();

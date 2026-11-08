@@ -158,7 +158,7 @@ async function countAllUsers() {
         `,
   );
 
-  return result.rows[0].total_users;
+  return parseInt(result.rows[0].total_users, 10);
 }
 
 export default {

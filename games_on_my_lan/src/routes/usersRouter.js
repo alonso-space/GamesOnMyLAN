@@ -12,8 +12,14 @@ import { uploadAvatar } from '../middlewares/upload.js';
 
 const router = express.Router();
 
-router.get('/register', requireGuestRegister, usersController.showRegister);
-router.post('/register', requireGuestRegister, requireLimitUsers, registerLimiter, usersController.register);
+router.get('/register', requireGuestRegister, requireLimitUsers, usersController.showRegister);
+router.post(
+  '/register',
+  requireGuestRegister,
+  registerLimiter,
+  requireLimitUsers,
+  usersController.register,
+);
 
 router.get('/profile', requireLoginPage, usersController.redirectToOwnProfile);
 router.get('/profile/:userId', usersController.showProfile);
