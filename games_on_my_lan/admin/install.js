@@ -5,6 +5,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { parseEnv } from 'util';
+import { toEnvValue } from './envValue.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -178,14 +179,6 @@ function detectHostIp() {
   }
 
   return undefined;
-}
-
-function toEnvValue(value) {
-  const text = String(value);
-
-  if (/^[A-Za-z0-9_./:@+-]*$/.test(text)) return text;
-
-  return JSON.stringify(text);
 }
 
 function readEnvFile() {
