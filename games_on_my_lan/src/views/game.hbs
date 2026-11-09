@@ -66,6 +66,16 @@
                     </form>
                 {{/if}}
 
+                {{#if game.source_url}}
+                    <a
+                        href="{{game.source_url}}"
+                        class="btn btn-outline-light"
+                        target="_blank"
+                        rel="noopener noreferrer nofollow ugc">
+                        🔗 Ver fuente
+                    </a>
+                {{/if}}
+
                 {{#if isOwner}}
                     <a href="/games/game-details/{{game.id_game}}/edit" class="btn btn-outline-light">
                         ✎ Editar

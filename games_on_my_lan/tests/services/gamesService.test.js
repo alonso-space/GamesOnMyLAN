@@ -30,11 +30,20 @@ describe('gamesService', () => {
       entry_file: 'index.html',
       uploader_id: 5,
       original_author: 'Atari',
+      source_url: 'https://github.com/atari/pong',
     });
 
     expect(pool.query).toHaveBeenCalledOnce();
     // Verifica que los parámetros lleguen en el orden correcto a la query
-    expect(pool.query.mock.calls[0][1]).toEqual(['Pong', 'clásico', 'index.html', 5, 'Atari', 0]);
+    expect(pool.query.mock.calls[0][1]).toEqual([
+      'Pong',
+      'clásico',
+      'index.html',
+      5,
+      'Atari',
+      'https://github.com/atari/pong',
+      0,
+    ]);
     expect(result).toEqual(fakeRow);
   });
 
@@ -90,7 +99,7 @@ describe('gamesService', () => {
       const insert = client.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO games'));
 
       expect(result).toEqual({ id_game: 9 });
-      expect(insert[1][5]).toBe(70 * MB);
+      expect(insert[1][6]).toBe(70 * MB);
       expect(sqls(client)).toContain('BEGIN');
       expect(sqls(client)).toContain('COMMIT');
       expect(client.release).toHaveBeenCalledOnce();

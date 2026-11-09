@@ -7,6 +7,7 @@ import {
   assertPngFile,
   isValidId,
   parseOriginalAuthor,
+  parseSourceUrl,
 } from '../../src/utils/validators.js';
 
 describe('validateEntryFile', () => {
@@ -113,6 +114,50 @@ describe('parseOriginalAuthor', () => {
   it('rechaza con status 400 lo que no es texto o es demasiado largo', () => {
     expect(() => parseOriginalAuthor(['a'])).toThrow(expect.objectContaining({ status: 400 }));
     expect(() => parseOriginalAuthor('a'.repeat(101))).toThrow(
+      expect.objectContaining({ status: 400 }),
+    );
+  });
+});
+
+describe('parseSourceUrl', () => {
+  it('acepta http y https y devuelve la URL normalizada', () => {
+    expect(parseSourceUrl('  https://github.com/usuario/repo  ')).toBe(
+      'https://github.com/usuario/repo',
+    );
+    expect(parseSourceUrl('http://ejemplo.com')).toBe('http://ejemplo.com/');
+  });
+
+  it('devuelve null si falta o viene vacío', () => {
+    expect(parseSourceUrl(undefined)).toBeNull();
+    expect(parseSourceUrl(null)).toBeNull();
+    expect(parseSourceUrl('   ')).toBeNull();
+  });
+
+  it('rechaza con status 400 los esquemas que no son http/https', () => {
+    for (const value of [
+      'javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'ftp://ejemplo.com/juego',
+      'file:///etc/passwd',
+    ]) {
+      expect(() => parseSourceUrl(value)).toThrow(expect.objectContaining({ status: 400 }));
+    }
+  });
+
+  it('rechaza con status 400 texto que no es una URL, no-strings y URLs con credenciales', () => {
+    expect(() => parseSourceUrl('github.com/usuario/repo')).toThrow(
+      expect.objectContaining({ status: 400 }),
+    );
+    expect(() => parseSourceUrl(['https://a.com'])).toThrow(
+      expect.objectContaining({ status: 400 }),
+    );
+    expect(() => parseSourceUrl('https://usuario:clave@ejemplo.com')).toThrow(
+      expect.objectContaining({ status: 400 }),
+    );
+  });
+
+  it('rechaza con status 400 una URL demasiado larga', () => {
+    expect(() => parseSourceUrl(`https://ejemplo.com/${'a'.repeat(500)}`)).toThrow(
       expect.objectContaining({ status: 400 }),
     );
   });

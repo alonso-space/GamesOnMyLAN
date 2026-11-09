@@ -52,9 +52,10 @@ function insertGame(db, game, sizeBytes) {
             entry_file,
             uploader_id,
             original_author,
+            source_url,
             size_bytes
         )
-        VALUES ($1,$2,$3,$4,$5,$6)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
         RETURNING *;
         `,
     [
@@ -63,6 +64,7 @@ function insertGame(db, game, sizeBytes) {
       game.entry_file,
       game.uploader_id,
       game.original_author,
+      game.source_url,
       sizeBytes,
     ],
   );
@@ -129,6 +131,7 @@ async function getAllGames(userId) {
             g.entry_file,
             g.updated_at,
             g.original_author,
+            g.source_url,
             u.username AS uploader_name,
             (f.game_id IS NOT NULL) AS is_favorite
         FROM games g
@@ -157,6 +160,7 @@ async function getGameById(id_game) {
             g.entry_file,
             g.uploader_id,
             g.original_author,
+            g.source_url,
             g.updated_at,
             g.created_at,
             u.username AS uploader_name,
@@ -207,11 +211,19 @@ async function updateGame(id_game, game) {
             game_description = $2,
             entry_file = $3,
             original_author = $4,
+            source_url = $5,
             updated_at = NOW()
-        WHERE id_game = $5
+        WHERE id_game = $6
         RETURNING *;
         `,
-    [game.game_name, game.game_description, game.entry_file, game.original_author, id_game],
+    [
+      game.game_name,
+      game.game_description,
+      game.entry_file,
+      game.original_author,
+      game.source_url,
+      id_game,
+    ],
   );
 
   return result.rows[0];
