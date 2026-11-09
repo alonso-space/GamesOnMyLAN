@@ -77,7 +77,7 @@ async function showProfile(req, res) {
 
   const viewer = req.session.user ? await usersService.getUserById(req.session.user.id) : null;
 
-  const games = await gamesService.getGamesByAuthorId(profileUser.id_user);
+  const games = await gamesService.getGamesByUploaderId(profileUser.id_user);
 
   res.render('profile', {
     title: 'Perfil',
@@ -280,7 +280,7 @@ async function deleteUser(req, res) {
   const targetId = req.params.userId;
 
   // Se leen antes de borrar: la base elimina los juegos del usuario en cascada
-  const games = await gamesService.getGamesByAuthorId(targetId);
+  const games = await gamesService.getGamesByUploaderId(targetId);
 
   const deletedUser = await usersService.deleteUser(targetId);
 

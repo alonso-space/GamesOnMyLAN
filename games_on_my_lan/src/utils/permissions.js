@@ -1,12 +1,12 @@
 export const ROLE_RANK = { member: 1, admin: 2, owner: 3 };
 
-export function canDeleteGame({ actorId, actorRole, authorId, authorRole }) {
-  if (actorId === authorId) return true;
+export function canDeleteGame({ actorId, actorRole, uploaderId, uploaderRole }) {
+  if (actorId === uploaderId) return true;
 
   const actorRank = ROLE_RANK[actorRole] ?? 0;
-  const authorRank = ROLE_RANK[authorRole] ?? Infinity;
+  const uploaderRank = ROLE_RANK[uploaderRole] ?? Infinity;
 
-  return actorRank > authorRank;
+  return actorRank > uploaderRank;
 }
 
 export function canDeleteUser({ actorId, actorRole, targetId, targetRole }) {

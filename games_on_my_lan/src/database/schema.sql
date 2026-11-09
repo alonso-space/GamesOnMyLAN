@@ -23,11 +23,12 @@ CREATE TABLE IF NOT EXISTS games (
     game_description TEXT,
     entry_file TEXT NOT NULL DEFAULT 'index.html',
     size_bytes BIGINT NOT NULL DEFAULT 0,
-    author_id INTEGER NOT NULL,
+    uploader_id INTEGER NOT NULL,
+    original_author VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (author_id)
+    FOREIGN KEY (uploader_id)
         REFERENCES users(id_user)
         ON DELETE CASCADE
 );
@@ -74,3 +75,26 @@ BEGIN
 END $$;
 
 ALTER TABLE games ADD COLUMN IF NOT EXISTS size_bytes BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE games ADD COLUMN IF NOT EXISTS original_author VARCHAR(100);
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'games'
+          AND column_name = 'author_id'
+    ) THEN
+        ALTER TABLE games RENAME COLUMN author_id TO uploader_id;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'games_author_id_fkey'
+          AND conrelid = 'games'::regclass
+    ) THEN
+        ALTER TABLE games RENAME CONSTRAINT games_author_id_fkey TO games_uploader_id_fkey;
+    END IF;
+END $$;

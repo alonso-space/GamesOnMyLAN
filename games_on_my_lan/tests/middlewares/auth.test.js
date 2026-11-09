@@ -89,8 +89,8 @@ describe('requireCanDelete', () => {
     expect(gamesService.getGameById).not.toHaveBeenCalled();
   });
 
-  it('deja pasar y anota req.moderation cuando el actor es el autor', async () => {
-    gamesService.getGameById.mockResolvedValueOnce({ author_id: 7, author_role: 'member' });
+  it('deja pasar y anota req.moderation cuando el actor es quien subió el juego', async () => {
+    gamesService.getGameById.mockResolvedValueOnce({ uploader_id: 7, uploader_role: 'member' });
     usersService.getUserById.mockResolvedValueOnce({ role_name: 'member' });
 
     const req = { params: { gameId: '10' }, session: { user: { id: 7 } } };
@@ -101,14 +101,14 @@ describe('requireCanDelete', () => {
 
     expect(next).toHaveBeenCalledOnce();
     expect(req.moderation).toEqual({
-      isAuthor: true,
+      isUploader: true,
       actorRole: 'member',
-      authorRole: 'member',
+      uploaderRole: 'member',
     });
   });
 
   it('responde 403 cuando un member intenta borrar el juego de otro usuario', async () => {
-    gamesService.getGameById.mockResolvedValueOnce({ author_id: 7, author_role: 'member' });
+    gamesService.getGameById.mockResolvedValueOnce({ uploader_id: 7, uploader_role: 'member' });
     usersService.getUserById.mockResolvedValueOnce({ role_name: 'member' });
 
     const req = { params: { gameId: '10' }, session: { user: { id: 99 } } };

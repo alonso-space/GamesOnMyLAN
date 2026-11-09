@@ -13,7 +13,7 @@
             <input class="mySearcher"
                 type="search"
                 id="gameSearch"
-                placeholder="Buscar por nombre o autor..."
+                placeholder="Buscar por nombre, autor o usuario..."
                 autocomplete="off">
         </div>
 
@@ -24,7 +24,7 @@
     <div class="game-grid" id="gameGrid">
 
         {{#each games}}
-            <article class="game-card" data-name="{{game_name}}" data-author="{{author_name}}">
+            <article class="game-card" data-name="{{game_name}}" data-uploader="{{uploader_name}}" data-original-author="{{original_author}}">
 
                 <div class="game-card-media">
                     <img
@@ -51,7 +51,8 @@
 
                 <div class="game-card-body">
                     <p class="game-card-title" title="{{game_name}}">{{game_name}}</p>
-                    <p class="game-card-author">por {{author_name}}</p>
+                    <p class="game-card-credit">Subido por {{uploader_name}}</p>
+                    <p class="game-card-credit">Autor: {{#if original_author}}{{original_author}}{{else}}<em>No especificado</em>{{/if}}</p>
                     <span class="game-card-date">Actualizado: {{updated_at}}</span>
                 </div>
 

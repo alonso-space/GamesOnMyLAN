@@ -22,11 +22,32 @@ export function validateEntryFile(value) {
   return badSegment ? null : entry;
 }
 
+export const ORIGINAL_AUTHOR_MAX_LENGTH = 100;
+
+// Devuelve el autor original limpio, o null si viene vacío. Lanza un error 400 si es inválido.
+export function parseOriginalAuthor(value) {
+  if (value === undefined || value === null) return null;
+
+  if (typeof value !== 'string') {
+    throw invalidInput('Autor original inválido.');
+  }
+
+  const author = value.trim();
+
+  if (author.length > ORIGINAL_AUTHOR_MAX_LENGTH) {
+    throw invalidInput(
+      `El autor original no puede superar los ${ORIGINAL_AUTHOR_MAX_LENGTH} caracteres.`,
+    );
+  }
+
+  return author === '' ? null : author;
+}
+
 // ---------- Imágenes PNG (miniaturas y avatares) ----------
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-function invalidImage(message) {
+function invalidInput(message) {
   const err = new Error(message);
   err.status = 400; // el manejador de errores de app.js responde 400 con este mensaje
   return err;
@@ -53,18 +74,18 @@ export async function assertPngFile(filePath) {
     header.toString('ascii', 12, 16) === 'IHDR';
 
   if (!looksLikePng) {
-    throw invalidImage('El archivo no es un PNG válido');
+    throw invalidInput('El archivo no es un PNG válido');
   }
 
   const width = header.readUInt32BE(16);
   const height = header.readUInt32BE(20);
 
   if (width === 0 || height === 0) {
-    throw invalidImage('El archivo no es un PNG válido');
+    throw invalidInput('El archivo no es un PNG válido');
   }
 
   if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-    throw invalidImage(
+    throw invalidInput(
       `La imagen es demasiado grande: máximo ${MAX_IMAGE_DIMENSION}×${MAX_IMAGE_DIMENSION} píxeles`,
     );
   }

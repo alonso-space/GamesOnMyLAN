@@ -158,6 +158,8 @@
                 <div class="game-card-body">
 
                     <p class="game-card-title" title="{{game_name}}">{{game_name}}</p>
+                    <p class="game-card-credit">Subido por {{@root.profileUser.username}}</p>
+                    <p class="game-card-credit">Autor: {{#if original_author}}{{original_author}}{{else}}<em>No especificado</em>{{/if}}</p>
 
                     <span class="game-card-date">Actualizado: {{updated_at}}</span>
 

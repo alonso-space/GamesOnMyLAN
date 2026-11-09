@@ -2,7 +2,12 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { validateEntryFile, assertPngFile, isValidId } from '../../src/utils/validators.js';
+import {
+  validateEntryFile,
+  assertPngFile,
+  isValidId,
+  parseOriginalAuthor,
+} from '../../src/utils/validators.js';
 
 describe('validateEntryFile', () => {
   it('acepta un archivo simple .html', () => {
@@ -92,5 +97,23 @@ describe('isValidId', () => {
     expect(isValidId('1.5')).toBe(false);
     expect(isValidId('-1')).toBe(false);
     expect(isValidId('1234567890')).toBe(false);
+  });
+});
+
+describe('parseOriginalAuthor', () => {
+  it('devuelve el texto sin espacios sobrantes', () => {
+    expect(parseOriginalAuthor('  Atari  ')).toBe('Atari');
+  });
+
+  it('devuelve null si falta o viene vacío', () => {
+    expect(parseOriginalAuthor(undefined)).toBeNull();
+    expect(parseOriginalAuthor('   ')).toBeNull();
+  });
+
+  it('rechaza con status 400 lo que no es texto o es demasiado largo', () => {
+    expect(() => parseOriginalAuthor(['a'])).toThrow(expect.objectContaining({ status: 400 }));
+    expect(() => parseOriginalAuthor('a'.repeat(101))).toThrow(
+      expect.objectContaining({ status: 400 }),
+    );
   });
 });

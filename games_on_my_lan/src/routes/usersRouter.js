@@ -39,11 +39,6 @@ router.get('/', usersController.showUsers);
 router.delete('/:userId', requireLogin, requireCanDeleteUser, usersController.deleteUser);
 
 router.post('/:userId/role', requireLogin, requireRole('owner'), usersController.changeRole);
-router.post(
-  '/:userId/trusted',
-  requireLogin,
-  requireRole('owner'),
-  usersController.changeTrusted,
-);
+router.post('/:userId/trusted', requireLogin, requireRole('owner'), usersController.changeTrusted);
 
 export default router;

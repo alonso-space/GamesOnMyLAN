@@ -10,6 +10,7 @@ import {
   ENTRY_FILE_ERROR,
   assertPngFile,
   isValidId,
+  parseOriginalAuthor,
 } from '../utils/validators.js';
 import { canDeleteGame } from '../utils/permissions.js';
 import { BYTES_PER_MB } from '../utils/limits.js';
@@ -47,6 +48,8 @@ async function createGame(req, res) {
       return res.status(400).send(ENTRY_FILE_ERROR);
     }
 
+    const originalAuthor = parseOriginalAuthor(req.body.original_author);
+
     // Valida la miniatura ANTES de crear el registro y extraer el zip,
     // para no hacer trabajo (ni dejar restos) si la imagen no sirve.
     if (req.files?.thumbnail?.[0]) {
@@ -60,7 +63,8 @@ async function createGame(req, res) {
         game_name: req.body.game_name,
         game_description: req.body.game_description,
         entry_file: entryFile,
-        author_id: req.session.user.id,
+        original_author: originalAuthor,
+        uploader_id: req.session.user.id,
       },
       req.quota,
     );
@@ -145,12 +149,12 @@ async function showGameDetails(req, res) {
     canDelete = canDeleteGame({
       actorId: user.id,
       actorRole: viewer?.role_name,
-      authorId: game.author_id,
-      authorRole: game.author_role,
+      uploaderId: game.uploader_id,
+      uploaderRole: game.uploader_role,
     });
   }
 
-  const isOwner = Boolean(user && user.id === game.author_id);
+  const isOwner = Boolean(user && user.id === game.uploader_id);
 
   res.render('game', {
     title: 'Detalles del juego',
@@ -168,12 +172,12 @@ async function deleteGame(req, res) {
     return res.status(404).send('Juego no encontrado');
   }
 
-  if (!req.moderation.isAuthor) {
+  if (!req.moderation.isUploader) {
     console.warn(
       `[MODERACIÓN] ${new Date().toISOString()} ` +
         `usuario #${req.session.user.id} (${req.moderation.actorRole}) eliminó ` +
         `el juego #${deletedGame.id_game} ${JSON.stringify(deletedGame.game_name)} ` +
-        `del usuario #${deletedGame.author_id} (${req.moderation.authorRole})`,
+        `del usuario #${deletedGame.uploader_id} (${req.moderation.uploaderRole})`,
     );
   }
 
@@ -219,18 +223,25 @@ async function updateGame(req, res) {
       return res.status(400).send(ENTRY_FILE_ERROR);
     }
 
+    const originalAuthor = parseOriginalAuthor(req.body.original_author);
+
     if (req.files?.thumbnail?.[0]) {
       await assertPngFile(req.files.thumbnail[0].path);
     }
 
     if (newZip && req.quota) {
-      reservation = await gamesService.reserveReplacement(gameId, currentGame.author_id, req.quota);
+      reservation = await gamesService.reserveReplacement(
+        gameId,
+        currentGame.uploader_id,
+        req.quota,
+      );
     }
 
     const updatedGame = await gamesService.updateGame(gameId, {
       game_name: req.body.game_name,
       game_description: req.body.game_description,
       entry_file: entryFile,
+      original_author: originalAuthor,
     });
 
     try {
@@ -257,6 +268,7 @@ async function updateGame(req, res) {
           game_name: currentGame.game_name,
           game_description: currentGame.game_description,
           entry_file: currentGame.entry_file,
+          original_author: currentGame.original_author,
         })
         .catch((rollbackError) => {
           console.error('Error revirtiendo metadatos:', rollbackError);

@@ -149,10 +149,13 @@
   text-overflow: ellipsis;
 }
 
-.game-card-author {
+.game-card-credit {
   color: var(--text-muted);
   font-size: 0.85rem;
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .game-card-date {
