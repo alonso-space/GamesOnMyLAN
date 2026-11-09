@@ -11,6 +11,7 @@ import {
   assertPngFile,
   isValidId,
   parseOriginalAuthor,
+  parseSourceUrl,
 } from '../utils/validators.js';
 import { canDeleteGame } from '../utils/permissions.js';
 import { BYTES_PER_MB } from '../utils/limits.js';
@@ -49,6 +50,7 @@ async function createGame(req, res) {
     }
 
     const originalAuthor = parseOriginalAuthor(req.body.original_author);
+    const sourceUrl = parseSourceUrl(req.body.source_url);
 
     // Valida la miniatura ANTES de crear el registro y extraer el zip,
     // para no hacer trabajo (ni dejar restos) si la imagen no sirve.
@@ -64,6 +66,7 @@ async function createGame(req, res) {
         game_description: req.body.game_description,
         entry_file: entryFile,
         original_author: originalAuthor,
+        source_url: sourceUrl,
         uploader_id: req.session.user.id,
       },
       req.quota,
@@ -224,6 +227,7 @@ async function updateGame(req, res) {
     }
 
     const originalAuthor = parseOriginalAuthor(req.body.original_author);
+    const sourceUrl = parseSourceUrl(req.body.source_url);
 
     if (req.files?.thumbnail?.[0]) {
       await assertPngFile(req.files.thumbnail[0].path);
@@ -242,6 +246,7 @@ async function updateGame(req, res) {
       game_description: req.body.game_description,
       entry_file: entryFile,
       original_author: originalAuthor,
+      source_url: sourceUrl,
     });
 
     try {
@@ -269,6 +274,7 @@ async function updateGame(req, res) {
           game_description: currentGame.game_description,
           entry_file: currentGame.entry_file,
           original_author: currentGame.original_author,
+          source_url: currentGame.source_url,
         })
         .catch((rollbackError) => {
           console.error('Error revirtiendo metadatos:', rollbackError);

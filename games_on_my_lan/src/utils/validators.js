@@ -43,6 +43,55 @@ export function parseOriginalAuthor(value) {
   return author === '' ? null : author;
 }
 
+export const SOURCE_URL_MAX_LENGTH = 500;
+
+// Devuelve la URL de la fuente normalizada, o null si viene vacía. Lanza un error 400 si es
+// inválida. Solo se aceptan http/https: así nunca se guarda un javascript: o data: que luego
+// se pintaría como enlace clicable en la ficha del juego.
+export function parseSourceUrl(value) {
+  if (value === undefined || value === null) return null;
+
+  if (typeof value !== 'string') {
+    throw invalidInput('Enlace de la fuente inválido.');
+  }
+
+  const raw = value.trim();
+
+  if (raw === '') return null;
+
+  if (raw.length > SOURCE_URL_MAX_LENGTH) {
+    throw invalidInput(
+      `El enlace de la fuente no puede superar los ${SOURCE_URL_MAX_LENGTH} caracteres.`,
+    );
+  }
+
+  let url;
+
+  try {
+    url = new URL(raw);
+  } catch {
+    throw invalidInput('El enlace de la fuente no es una URL válida (ej: https://ejemplo.com).');
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw invalidInput('El enlace de la fuente debe empezar con http:// o https://.');
+  }
+
+  // Sin usuario:contraseña incrustados (https://user:clave@sitio): aquí no tienen uso legítimo
+  if (url.username || url.password) {
+    throw invalidInput('El enlace de la fuente no puede incluir usuario ni contraseña.');
+  }
+
+  // href ya viene normalizado y con los caracteres especiales codificados
+  if (url.href.length > SOURCE_URL_MAX_LENGTH) {
+    throw invalidInput(
+      `El enlace de la fuente no puede superar los ${SOURCE_URL_MAX_LENGTH} caracteres.`,
+    );
+  }
+
+  return url.href;
+}
+
 // ---------- Imágenes PNG (miniaturas y avatares) ----------
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
