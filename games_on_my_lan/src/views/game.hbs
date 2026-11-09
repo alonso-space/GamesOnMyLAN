@@ -23,7 +23,8 @@
             </h1>
 
             <div class="detail-meta">
-                <span class="meta-chip"><strong>Autor:</strong> {{game.author_name}}</span>
+                <span class="meta-chip"><strong>Subido por:</strong> {{game.uploader_name}}</span>
+                <span class="meta-chip"><strong>Autor original:</strong> {{#if game.original_author}}{{game.original_author}}{{else}}<em>No especificado</em>{{/if}}</span>
                 <span class="meta-chip"><strong>Actualizado:</strong> {{game.updated_at}}</span>
                 <span class="meta-chip"><strong>Creado:</strong> {{game.created_at}}</span>
             </div>

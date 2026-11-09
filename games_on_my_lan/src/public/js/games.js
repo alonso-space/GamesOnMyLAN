@@ -19,9 +19,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     cards.forEach((card) => {
       const gameName = (card.dataset.name || '').toLowerCase();
-      const authorName = (card.dataset.author || '').toLowerCase();
+      const uploaderName = (card.dataset.uploader || '').toLowerCase();
+      const originalAuthor = (card.dataset.originalAuthor || '').toLowerCase();
 
-      const matches = gameName.includes(query) || authorName.includes(query);
+      const matches =
+        gameName.includes(query) || uploaderName.includes(query) || originalAuthor.includes(query);
 
       card.style.display = matches ? '' : 'none';
 

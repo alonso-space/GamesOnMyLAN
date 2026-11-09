@@ -28,12 +28,13 @@ describe('gamesService', () => {
       game_name: 'Pong',
       game_description: 'clásico',
       entry_file: 'index.html',
-      author_id: 5,
+      uploader_id: 5,
+      original_author: 'Atari',
     });
 
     expect(pool.query).toHaveBeenCalledOnce();
     // Verifica que los parámetros lleguen en el orden correcto a la query
-    expect(pool.query.mock.calls[0][1]).toEqual(['Pong', 'clásico', 'index.html', 5, 0]);
+    expect(pool.query.mock.calls[0][1]).toEqual(['Pong', 'clásico', 'index.html', 5, 'Atari', 0]);
     expect(result).toEqual(fakeRow);
   });
 
@@ -83,13 +84,13 @@ describe('gamesService', () => {
       });
       pool.connect.mockResolvedValue(client);
 
-      const game = { game_name: 'A', game_description: '', entry_file: 'x.html', author_id: 5 };
+      const game = { game_name: 'A', game_description: '', entry_file: 'x.html', uploader_id: 5 };
       const result = await gamesService.createGame(game, quota);
 
       const insert = client.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO games'));
 
       expect(result).toEqual({ id_game: 9 });
-      expect(insert[1][4]).toBe(70 * MB);
+      expect(insert[1][5]).toBe(70 * MB);
       expect(sqls(client)).toContain('BEGIN');
       expect(sqls(client)).toContain('COMMIT');
       expect(client.release).toHaveBeenCalledOnce();
@@ -99,7 +100,7 @@ describe('gamesService', () => {
       const client = fakeClient({ usage: { games: 3, bytes: 0 } });
       pool.connect.mockResolvedValue(client);
 
-      await expect(gamesService.createGame({ author_id: 5 }, quota)).rejects.toThrow(QuotaError);
+      await expect(gamesService.createGame({ uploader_id: 5 }, quota)).rejects.toThrow(QuotaError);
 
       expect(sqls(client).some((sql) => sql.includes('INSERT INTO games'))).toBe(false);
       expect(sqls(client)).toContain('ROLLBACK');
@@ -110,7 +111,7 @@ describe('gamesService', () => {
       const client = fakeClient({ usage: { games: 1, bytes: 100 * MB } });
       pool.connect.mockResolvedValue(client);
 
-      await expect(gamesService.createGame({ author_id: 5 }, quota)).rejects.toThrow(QuotaError);
+      await expect(gamesService.createGame({ uploader_id: 5 }, quota)).rejects.toThrow(QuotaError);
       expect(sqls(client)).toContain('ROLLBACK');
     });
 

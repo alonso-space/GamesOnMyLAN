@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { canDeleteGame, canDeleteUser } from '../../src/utils/permissions.js';
 
 describe('canDeleteGame', () => {
-  it('permite al autor borrar su propio juego, aunque sea member', () => {
+  it('permite a quien subió el juego borrarlo, aunque sea member', () => {
     expect(
       canDeleteGame({
         actorId: 1,
         actorRole: 'member',
-        authorId: 1,
-        authorRole: 'member',
+        uploaderId: 1,
+        uploaderRole: 'member',
       }),
     ).toBe(true);
   });
@@ -18,8 +18,8 @@ describe('canDeleteGame', () => {
       canDeleteGame({
         actorId: 2,
         actorRole: 'admin',
-        authorId: 1,
-        authorRole: 'member',
+        uploaderId: 1,
+        uploaderRole: 'member',
       }),
     ).toBe(true);
   });
@@ -29,8 +29,8 @@ describe('canDeleteGame', () => {
       canDeleteGame({
         actorId: 2,
         actorRole: 'admin',
-        authorId: 1,
-        authorRole: 'admin',
+        uploaderId: 1,
+        uploaderRole: 'admin',
       }),
     ).toBe(false);
   });
@@ -40,8 +40,8 @@ describe('canDeleteGame', () => {
       canDeleteGame({
         actorId: 3,
         actorRole: 'owner',
-        authorId: 1,
-        authorRole: 'admin',
+        uploaderId: 1,
+        uploaderRole: 'admin',
       }),
     ).toBe(true);
   });
@@ -51,8 +51,8 @@ describe('canDeleteGame', () => {
       canDeleteGame({
         actorId: 2,
         actorRole: 'member',
-        authorId: 1,
-        authorRole: 'member',
+        uploaderId: 1,
+        uploaderRole: 'member',
       }),
     ).toBe(false);
   });
@@ -62,8 +62,8 @@ describe('canDeleteGame', () => {
       canDeleteGame({
         actorId: 2,
         actorRole: 'rol_inventado',
-        authorId: 1,
-        authorRole: 'member',
+        uploaderId: 1,
+        uploaderRole: 'member',
       }),
     ).toBe(false);
   });

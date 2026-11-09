@@ -46,7 +46,7 @@ export async function requireOwnership(req, res, next) {
 
   const game = await gamesService.getGameById(gameId);
 
-  if (!game || game.author_id !== req.session.user.id) {
+  if (!game || game.uploader_id !== req.session.user.id) {
     return res.status(403).send('No eres el propietario del juego');
   }
 
@@ -77,8 +77,8 @@ export async function requireCanDelete(req, res, next) {
   const allowed = canDeleteGame({
     actorId,
     actorRole: actor.role_name,
-    authorId: game.author_id,
-    authorRole: game.author_role,
+    uploaderId: game.uploader_id,
+    uploaderRole: game.uploader_role,
   });
 
   if (!allowed) {
@@ -87,9 +87,9 @@ export async function requireCanDelete(req, res, next) {
 
   // Para el registro de moderación en el controlador
   req.moderation = {
-    isAuthor: game.author_id === actorId,
+    isUploader: game.uploader_id === actorId,
     actorRole: actor.role_name,
-    authorRole: game.author_role,
+    uploaderRole: game.uploader_role,
   };
 
   next();

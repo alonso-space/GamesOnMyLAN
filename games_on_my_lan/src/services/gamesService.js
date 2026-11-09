@@ -26,17 +26,17 @@ async function withUserLock(userId, fn) {
 }
 
 // Juegos y bytes que ya ocupa un usuario. excludeGameId: ignora un juego (el que se reemplaza).
-async function getUsage(authorId, excludeGameId = null, db = pool) {
+async function getUsage(uploaderId, excludeGameId = null, db = pool) {
   const result = await db.query(
     `
         SELECT
             COUNT(*)::int AS games,
             COALESCE(SUM(size_bytes), 0)::float8 AS bytes
         FROM games
-        WHERE author_id = $1
+        WHERE uploader_id = $1
           AND ($2::int IS NULL OR id_game <> $2);
         `,
-    [authorId, excludeGameId],
+    [uploaderId, excludeGameId],
   );
 
   return result.rows[0];
@@ -50,13 +50,21 @@ function insertGame(db, game, sizeBytes) {
             game_name,
             game_description,
             entry_file,
-            author_id,
+            uploader_id,
+            original_author,
             size_bytes
         )
-        VALUES ($1,$2,$3,$4,$5)
+        VALUES ($1,$2,$3,$4,$5,$6)
         RETURNING *;
         `,
-    [game.game_name, game.game_description, game.entry_file, game.author_id, sizeBytes],
+    [
+      game.game_name,
+      game.game_description,
+      game.entry_file,
+      game.uploader_id,
+      game.original_author,
+      sizeBytes,
+    ],
   );
 }
 
@@ -69,8 +77,8 @@ async function createGame(game, quota = null) {
     return result.rows[0];
   }
 
-  return withUserLock(game.author_id, async (client) => {
-    const usage = await getUsage(game.author_id, null, client);
+  return withUserLock(game.uploader_id, async (client) => {
+    const usage = await getUsage(game.uploader_id, null, client);
     const current = computeQuota(quota, usage);
     const violation = quotaViolation(current);
 
@@ -83,9 +91,9 @@ async function createGame(game, quota = null) {
 
 // Igual que createGame pero para reemplazar el zip de un juego existente. Devuelve el tamaño
 // anterior (para restaurarlo si falla) y el máximo que puede ocupar el zip nuevo.
-async function reserveReplacement(gameId, authorId, quota) {
-  return withUserLock(authorId, async (client) => {
-    const usage = await getUsage(authorId, gameId, client);
+async function reserveReplacement(gameId, uploaderId, quota) {
+  return withUserLock(uploaderId, async (client) => {
+    const usage = await getUsage(uploaderId, gameId, client);
     const current = computeQuota(quota, usage);
     const violation = quotaViolation(current, { checkGames: false });
 
@@ -120,11 +128,12 @@ async function getAllGames(userId) {
             g.game_description,
             g.entry_file,
             g.updated_at,
-            u.username AS author_name,
+            g.original_author,
+            u.username AS uploader_name,
             (f.game_id IS NOT NULL) AS is_favorite
         FROM games g
         JOIN users u
-            ON g.author_id = u.id_user
+            ON g.uploader_id = u.id_user
         LEFT JOIN favorites f
             ON f.game_id = g.id_game
             AND f.user_id = $1
@@ -146,13 +155,14 @@ async function getGameById(id_game) {
             g.game_name,
             g.game_description,
             g.entry_file,
-            g.author_id,
+            g.uploader_id,
+            g.original_author,
             g.updated_at,
             g.created_at,
-            u.username AS author_name,
-            r.role_name AS author_role
+            u.username AS uploader_name,
+            r.role_name AS uploader_role
         FROM games g
-        JOIN users u ON g.author_id = u.id_user
+        JOIN users u ON g.uploader_id = u.id_user
         JOIN roles r ON u.role_id = r.id_role
         WHERE g.id_game = $1;`,
     [id_game],
@@ -161,15 +171,15 @@ async function getGameById(id_game) {
   return result.rows[0];
 }
 
-async function getGamesByAuthorId(author_id) {
+async function getGamesByUploaderId(uploader_id) {
   const result = await pool.query(
     `
         SELECT *
         FROM games
-        WHERE author_id = $1
+        WHERE uploader_id = $1
         ORDER BY updated_at DESC;
         `,
-    [author_id],
+    [uploader_id],
   );
 
   return result.rows;
@@ -196,11 +206,12 @@ async function updateGame(id_game, game) {
             game_name = $1,
             game_description = $2,
             entry_file = $3,
+            original_author = $4,
             updated_at = NOW()
-        WHERE id_game = $4
+        WHERE id_game = $5
         RETURNING *;
         `,
-    [game.game_name, game.game_description, game.entry_file, id_game],
+    [game.game_name, game.game_description, game.entry_file, game.original_author, id_game],
   );
 
   return result.rows[0];
@@ -225,7 +236,7 @@ export default {
   setGameSize,
   getAllGames,
   getGameById,
-  getGamesByAuthorId,
+  getGamesByUploaderId,
   deleteGame,
   updateGame,
 };
