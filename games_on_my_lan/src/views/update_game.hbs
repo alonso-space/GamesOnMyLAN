@@ -9,7 +9,9 @@
     <form
         action="/games/{{game.id_game}}?_method=PUT"
         method="POST"
-        enctype="multipart/form-data">
+        enctype="multipart/form-data"
+        data-upload-form
+        data-max-bytes="{{maxUploadBytes}}">
 
         <div class="row g-4">
 
@@ -31,8 +33,8 @@
                     name="thumbnail"
                     id="thumbnail"
                     accept=".png"
-                    data-max-mb="5">
-                <p class="field-hint">Formato PNG, máximo 5 MB.</p>
+                    data-max-mb="1">
+                <p class="field-hint">Formato PNG, máximo 1 MB y 1024×1024 px.</p>
 
             </div>
 

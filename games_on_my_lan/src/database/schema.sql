@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     role_id INTEGER NOT NULL,
     bio TEXT,
+    trusted BOOLEAN NOT NULL DEFAULT FALSE,
     registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (role_id)
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS games (
     game_name VARCHAR(100) NOT NULL,
     game_description TEXT,
     entry_file TEXT NOT NULL DEFAULT 'index.html',
+    size_bytes BIGINT NOT NULL DEFAULT 0,
     author_id INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -52,3 +54,23 @@ VALUES
     ('admin'),
     ('member')
 ON CONFLICT (role_name) DO NOTHING;
+
+-- Migraciones para bases creadas antes de estas columnas (no hacen nada si ya existen)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'users'
+          AND column_name = 'trusted'
+    ) THEN
+        ALTER TABLE users ADD COLUMN trusted BOOLEAN NOT NULL DEFAULT FALSE;
+
+        UPDATE users
+        SET trusted = TRUE
+        WHERE role_id = (SELECT id_role FROM roles WHERE role_name = 'owner');
+    END IF;
+END $$;
+
+ALTER TABLE games ADD COLUMN IF NOT EXISTS size_bytes BIGINT NOT NULL DEFAULT 0;

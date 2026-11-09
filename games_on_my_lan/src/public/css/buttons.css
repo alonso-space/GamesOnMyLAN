@@ -76,3 +76,12 @@
   border-color: #ff0000;
   color: #ffffff;
 }
+
+/* Botón durante la subida */
+.btn-primary.is-uploading:disabled {
+  background-color: var(--red-dark);
+  border-color: #000000;
+  color: var(--text);
+  opacity: 1;
+  cursor: wait;
+}

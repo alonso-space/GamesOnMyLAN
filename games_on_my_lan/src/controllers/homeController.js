@@ -7,13 +7,13 @@ async function showHome(req, res) {
   // Si las estadísticas fallan, la portada se muestra igual, sin ellas
   try {
     const [games, users] = await Promise.all([
-      gamesService.getAllGames(),
-      usersService.getAllUsers(),
+      gamesService.countAllGames(),
+      usersService.countAllUsers(),
     ]);
 
     stats = {
-      totalGames: games.length,
-      totalUsers: users.length,
+      totalGames: games,
+      totalUsers: users,
     };
   } catch (error) {
     console.error('No se pudieron cargar las estadísticas de la portada:', error);

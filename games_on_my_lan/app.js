@@ -18,15 +18,6 @@ import favoritesRouter from './src/routes/favoritesRouter.js';
 import { csrfProtection } from './src/middlewares/csrf.js';
 import { getSessionSecret } from './src/utils/sessionSecret.js';
 
-// Red de seguridad: un error inesperado se registra en vez de tumbar el servidor
-process.on('unhandledRejection', (reason) => {
-  console.error('Promesa rechazada sin manejar:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('Excepción no capturada:', error);
-});
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -103,8 +94,12 @@ app.use((err, req, res, next) => {
     return next(err);
   }
 
+  if (err.name === 'QuotaError') {
+    return res.status(err.status).send(err.message);
+  }
+
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(413).send('El archivo es demasiado grande');
+    return res.status(413).send(err.publicMessage ?? 'El archivo es demasiado grande');
   }
 
   if (err.name === 'MulterError' || err.status === 400) {

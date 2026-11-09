@@ -30,6 +30,7 @@ async function getUserById(userId) {
             users.username,
             roles.role_name,
             users.bio,
+            users.trusted,
             users.registered_at
         FROM users
         INNER JOIN roles
@@ -53,6 +54,7 @@ async function getAllUsers() {
             users.id_user,
             users.username,
             roles.role_name,
+            users.trusted,
             users.registered_at
         FROM users
         INNER JOIN roles
@@ -80,6 +82,22 @@ async function updateUserRole(userId, roleName) {
         RETURNING users.id_user, users.username, target.old_role
         `,
     [roleName, userId],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+// El owner no se modifica: siempre es de confianza.
+async function updateUserTrusted(userId, trusted) {
+  const result = await pool.query(
+    `
+        UPDATE users
+        SET trusted = $1
+        WHERE id_user = $2
+          AND role_id <> (SELECT id_role FROM roles WHERE role_name = 'owner')
+        RETURNING id_user, username, trusted
+        `,
+    [trusted, userId],
   );
 
   return result.rows[0] ?? null;
@@ -150,11 +168,24 @@ async function changePassword(userId, currentPassword, newPassword) {
   return updated.rowCount === 0 ? 'conflict' : 'ok';
 }
 
+async function countAllUsers() {
+  const result = await pool.query(
+    `
+        SELECT COUNT(*) AS total_users
+        FROM users;
+        `,
+  );
+
+  return parseInt(result.rows[0].total_users, 10);
+}
+
 export default {
+  countAllUsers,
   registerUser,
   getUserById,
   getAllUsers,
   updateUserRole,
+  updateUserTrusted,
   deleteUser,
   updateBio,
   changePassword,

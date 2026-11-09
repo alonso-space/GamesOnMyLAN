@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 try {
-  process.loadEnvFile(path.join(__dirname, '..', '.env'));
+  process.loadEnvFile(path.join(__dirname, '..', '..', '.env'));
 } catch (error) {
   if (error.code !== 'ENOENT') {
     throw error;
@@ -43,6 +43,25 @@ const settings = {
 
   public_mode: toBoolean(read('PUBLIC_MODE')),
   games_origin: read('GAMES_ORIGIN'),
+
+  limit_users: toBoolean(read('LIMIT_USERS')),
+  max_users: toNumber(read('MAX_USERS')),
+
+  limit_games: toBoolean(read('LIMIT_GAMES')),
+  games_qty: toNumber(read('GAMES_QTY')),
+  max_mbs: toNumber(read('MAX_MBS')),
 };
+
+if (settings.limit_users && !(Number.isInteger(settings.max_users) && settings.max_users > 0)) {
+  throw new Error('LIMIT_USERS=true requiere que MAX_USERS sea un entero mayor que 0');
+}
+
+if (settings.limit_games) {
+  const isPositiveInteger = (value) => Number.isInteger(value) && value > 0;
+
+  if (!isPositiveInteger(settings.games_qty) || !isPositiveInteger(settings.max_mbs)) {
+    throw new Error('LIMIT_GAMES=true requiere que GAMES_QTY y MAX_MBS sean enteros mayores que 0');
+  }
+}
 
 export default settings;

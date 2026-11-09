@@ -101,6 +101,9 @@ async function showUsers(req, res) {
     return {
       ...user,
       canChangeRole: canManageRoles && (isPromotable || isDemotable),
+      canChangeTrust: canManageRoles && user.role_name !== 'owner',
+      newTrusted: !user.trusted,
+      newTrustedLabel: user.trusted ? 'Quitar confianza' : 'Marcar de confianza',
       canDelete: canViewerDelete(viewer, user),
       newRole: isDemotable ? 'member' : 'admin',
       newRoleLabel: isDemotable ? 'Degradar a member' : 'Ascender a admin',
@@ -110,7 +113,8 @@ async function showUsers(req, res) {
   res.render('users', {
     title: 'Usuarios',
     users: rows,
-    showActions: rows.some((row) => row.canChangeRole || row.canDelete),
+    canManageRoles,
+    showActions: rows.some((row) => row.canChangeRole || row.canChangeTrust || row.canDelete),
   });
 }
 
@@ -167,6 +171,33 @@ async function changeRole(req, res) {
         `${JSON.stringify(updated.username)}: ${updated.old_role} -> ${newRole}`,
     );
   }
+
+  res.redirect('/users');
+}
+
+async function changeTrusted(req, res) {
+  const targetId = req.params.userId;
+  const { trusted } = req.body;
+
+  if (!isValidId(targetId)) {
+    return res.status(404).send('Usuario no encontrado');
+  }
+
+  if (!['true', 'false'].includes(trusted)) {
+    return res.status(400).send('Valor inválido');
+  }
+
+  const updated = await usersService.updateUserTrusted(targetId, trusted === 'true');
+
+  if (!updated) {
+    return res.status(403).send('Usuario no encontrado o no modificable');
+  }
+
+  console.warn(
+    `[CONFIANZA] ${new Date().toISOString()} ` +
+      `owner #${req.session.user.id} marcó a #${updated.id_user} ` +
+      `${JSON.stringify(updated.username)} como trusted=${updated.trusted}`,
+  );
 
   res.redirect('/users');
 }
@@ -290,6 +321,7 @@ export default {
   updateAvatar,
   updateBio,
   changeRole,
+  changeTrusted,
   showChangePassword,
   changePassword,
   deleteUser,

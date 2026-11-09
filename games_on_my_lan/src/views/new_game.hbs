@@ -6,10 +6,22 @@
         ⬆️ Subir nuevo juego
     </h1>
 
+    {{#if quota}}
+    <p class="field-hint">
+        Usas {{quota.usedMb}} de {{quota.maxMb}} MB y {{quota.usedGames}} de {{quota.maxGames}} juegos.
+    </p>
+    {{/if}}
+
+    {{#if quota.blockedMessage}}
+    <div class="alert alert-danger" role="alert">{{quota.blockedMessage}}</div>
+    {{/if}}
+
     <form
         action="/games"
         method="POST"
-        enctype="multipart/form-data">
+        enctype="multipart/form-data"
+        data-upload-form
+        data-max-bytes="{{maxUploadBytes}}">
 
         <div class="row g-4">
 
@@ -30,9 +42,9 @@
                     name="thumbnail"
                     id="thumbnail"
                     accept=".png"
-                    data-max-mb="5">
+                    data-max-mb="1">
 
-                <p class="field-hint">Formato PNG, máximo 5 MB. Cuadrada se ve mejor.</p>
+                <p class="field-hint">Formato PNG, máximo 1 MB y 1024×1024 px. Cuadrada se ve mejor.</p>
 
             </div>
 
@@ -93,7 +105,8 @@
 
                 <button
                     class="btn btn-primary"
-                    type="submit">
+                    type="submit"
+                    {{#if quota.blockedMessage}}disabled{{/if}}>
                     ⬆️ Registrar juego
                 </button>
             </div>

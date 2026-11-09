@@ -3,6 +3,7 @@ import gamesService from '../services/gamesService.js';
 import storageService from '../services/storageService.js';
 import favoritesService from '../services/favoritesService.js';
 import usersService from '../services/usersService.js';
+import quotaService from '../services/quotaService.js';
 import { getGamesOrigin } from '../config.js';
 import {
   validateEntryFile,
@@ -11,15 +12,28 @@ import {
   isValidId,
 } from '../utils/validators.js';
 import { canDeleteGame } from '../utils/permissions.js';
+import { BYTES_PER_MB } from '../utils/limits.js';
+import { quotaViolation } from '../utils/quota.js';
 
 async function cleanupUploads(files) {
   const all = Object.values(files ?? {}).flat();
   await Promise.all(all.map((f) => fsp.unlink(f.path).catch(() => {})));
 }
 
-function showNewGame(req, res) {
+async function showNewGame(req, res) {
+  const quota = await quotaService.getQuota(req.session.user.id);
+
   res.render('new_game', {
     title: 'Nuevo Juego',
+    quota: quota && {
+      usedMb: Math.ceil(quota.usedBytes / BYTES_PER_MB),
+      maxMb: Math.round(quota.maxBytes / BYTES_PER_MB),
+      usedGames: quota.usedGames,
+      maxGames: quota.maxGames,
+      blockedMessage: quotaViolation(quota),
+    },
+    // El navegador lo usa para avisar antes de subir un zip que no cabe
+    maxUploadBytes: quota?.remainingBytes,
   });
 }
 
@@ -39,14 +53,26 @@ async function createGame(req, res) {
       await assertPngFile(req.files.thumbnail[0].path);
     }
 
-    game = await gamesService.createGame({
-      game_name: req.body.game_name,
-      game_description: req.body.game_description,
-      entry_file: entryFile,
-      author_id: req.session.user.id,
-    });
+    // Con límites activos, createGame reserva el espacio restante y eso es lo máximo
+    // que puede ocupar el zip al extraerse (size_bytes queda con esa reserva hasta setGameSize)
+    game = await gamesService.createGame(
+      {
+        game_name: req.body.game_name,
+        game_description: req.body.game_description,
+        entry_file: entryFile,
+        author_id: req.session.user.id,
+      },
+      req.quota,
+    );
 
-    await storageService.extractGame(req.files.gameFile[0], game.id_game, game.entry_file);
+    const { bytes } = await storageService.extractGame(
+      req.files.gameFile[0],
+      game.id_game,
+      game.entry_file,
+      { maxBytes: req.quota ? Number(game.size_bytes) : undefined },
+    );
+
+    await gamesService.setGameSize(game.id_game, bytes);
 
     // La miniatura es opcional: si no se subió, usamos la imagen por defecto.
     await storageService.storeThumbnail(req.files.thumbnail?.[0] ?? null, game.id_game);
@@ -163,15 +189,24 @@ async function showEditGame(req, res) {
     return res.status(404).send('Juego no encontrado');
   }
 
+  const quota = await quotaService.getQuota(req.session.user.id, {
+    excludeGameId: req.params.gameId,
+  });
+
   res.render('update_game', {
     title: 'Editar juego',
     game,
+    maxUploadBytes: quota?.remainingBytes,
   });
 }
 
 async function updateGame(req, res) {
+  const gameId = req.params.gameId;
+  const newZip = req.files?.gameFile?.[0];
+  // Reserva de cupo de este reemplazo; se pone en null cuando ya quedó el tamaño real
+  let reservation = null;
+
   try {
-    const gameId = req.params.gameId;
     const currentGame = await gamesService.getGameById(gameId);
 
     if (!currentGame) {
@@ -188,6 +223,10 @@ async function updateGame(req, res) {
       await assertPngFile(req.files.thumbnail[0].path);
     }
 
+    if (newZip && req.quota) {
+      reservation = await gamesService.reserveReplacement(gameId, currentGame.author_id, req.quota);
+    }
+
     const updatedGame = await gamesService.updateGame(gameId, {
       game_name: req.body.game_name,
       game_description: req.body.game_description,
@@ -195,12 +234,16 @@ async function updateGame(req, res) {
     });
 
     try {
-      if (req.files?.gameFile?.[0]) {
-        await storageService.replaceGameFiles(
+      if (newZip) {
+        const { bytes } = await storageService.replaceGameFiles(
           gameId,
-          req.files.gameFile[0],
+          newZip,
           updatedGame.entry_file,
+          { maxBytes: reservation?.budget },
         );
+
+        await gamesService.setGameSize(gameId, bytes);
+        reservation = null;
       }
 
       if (req.files?.thumbnail?.[0]) {
@@ -224,6 +267,12 @@ async function updateGame(req, res) {
 
     res.redirect(`/games/game-details/${gameId}`);
   } finally {
+    if (reservation) {
+      await gamesService.setGameSize(gameId, reservation.previousBytes).catch((error) => {
+        console.error('Error restaurando el tamaño del juego:', error);
+      });
+    }
+
     await cleanupUploads(req.files);
   }
 }

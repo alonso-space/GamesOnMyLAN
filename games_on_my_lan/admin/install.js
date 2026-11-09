@@ -1,21 +1,27 @@
 import bcrypt from 'bcryptjs';
 import readline from 'readline';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { parseEnv } from 'util';
+import { toEnvValue } from './envValue.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const envPath = path.join(__dirname, '..', '.env');
-
+// install.js está dentro de admin/.
+const envPath = path.join(__dirname, '..', '..', '.env');
 const schemaPath = path.join(__dirname, '../src/database/schema.sql');
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+let rl = createReadline();
+
+function createReadline() {
+  return readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+}
 
 function ask(question) {
   return new Promise((resolve) => {
@@ -27,39 +33,94 @@ function askDefault(question, defaultValue) {
   return new Promise((resolve) => {
     rl.question(`${question} [${defaultValue}]: `, (answer) => {
       const value = answer.trim();
-
-      resolve(value === '' ? defaultValue : value);
+      resolve(value === '' ? String(defaultValue) : value);
     });
   });
 }
 
-function askBoolean(question, defaultValue = true) {
+// Lee contraseñas sin mostrarlas en una terminal interactiva.
+async function askPassword(question) {
+  if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== 'function') {
+    return ask(question);
+  }
+
+  rl.close();
+  process.stdout.write(question);
+
+  return new Promise((resolve, reject) => {
+    let password = '';
+
+    const restoreReadline = () => {
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdin.removeListener('data', onData);
+      rl = createReadline();
+    };
+
+    const onData = (chunk) => {
+      for (const char of chunk.toString('utf8')) {
+        if (char === '\u0003') {
+          restoreReadline();
+          process.stdout.write('\n');
+          reject(new Error('Operación cancelada.'));
+          return;
+        }
+
+        if (char === '\r' || char === '\n') {
+          restoreReadline();
+          process.stdout.write('\n');
+          resolve(password);
+          return;
+        }
+
+        if (char === '\u007f' || char === '\b') {
+          password = password.slice(0, -1);
+          continue;
+        }
+
+        if (char >= ' ' && char !== '\u007f') {
+          password += char;
+        }
+      }
+    };
+
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data', onData);
+  });
+}
+
+async function askBoolean(question, defaultValue = true) {
   const defaultText = defaultValue ? 'S/n' : 's/N';
 
-  return new Promise((resolve) => {
-    rl.question(`${question} [${defaultText}]: `, (answer) => {
-      const value = answer.trim().toLowerCase();
+  while (true) {
+    const value = (await ask(`${question} [${defaultText}]: `)).trim().toLowerCase();
 
-      if (value === '') {
-        resolve(defaultValue);
-        return;
-      }
+    if (value === '') return defaultValue;
+    if (['s', 'si', 'sí', 'y', 'yes'].includes(value)) return true;
+    if (['n', 'no'].includes(value)) return false;
 
-      if (value === 's' || value === 'si' || value === 'sí' || value === 'y' || value === 'yes') {
-        resolve(true);
-        return;
-      }
+    console.log('Respuesta no válida. Introduce S o N.');
+  }
+}
 
-      if (value === 'n' || value === 'no') {
-        resolve(false);
-        return;
-      }
+async function askPort(question, defaultValue, forbiddenPort) {
+  while (true) {
+    const answer = await askDefault(question, defaultValue);
+    const port = Number(answer);
 
-      console.log('Respuesta no válida. Se utilizará el valor por defecto.');
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      console.log('Introduce un puerto válido entre 1 y 65535.');
+      continue;
+    }
 
-      resolve(defaultValue);
-    });
-  });
+    if (forbiddenPort !== undefined && port === forbiddenPort) {
+      console.log('Debe ser distinto al puerto de la aplicación.');
+      continue;
+    }
+
+    return port;
+  }
 }
 
 async function askInstallationType() {
@@ -75,13 +136,8 @@ async function askInstallationType() {
   while (true) {
     const option = (await ask('Selecciona una opción [1/2]: ')).trim();
 
-    if (option === '1') {
-      return 'new';
-    }
-
-    if (option === '2') {
-      return 'restore';
-    }
+    if (option === '1') return 'new';
+    if (option === '2') return 'restore';
 
     console.log('\nOpción no válida.\n');
   }
@@ -93,36 +149,176 @@ const ENV_KEYS = {
   db_user: 'DB_USER',
   db_password: 'DB_PASSWORD',
   db_database: 'DB_DATABASE',
+
   app_port: 'APP_PORT',
   games_port: 'GAMES_PORT',
+
   guest_register: 'GUEST_REGISTER',
+  host_ip: 'HOST_IP',
+
+  owner_user: 'OWNER_USER',
+  owner_password: 'OWNER_PASSWORD',
+
+  limit_users: 'LIMIT_USERS',
+  max_users: 'MAX_USERS',
+
+  limit_games: 'LIMIT_GAMES',
+  games_qty: 'GAMES_QTY',
+  max_mbs: 'MAX_MBS',
+
+  public_mode: 'PUBLIC_MODE',
+  games_origin: 'GAMES_ORIGIN',
 };
 
-function toEnvValue(value) {
-  const text = String(value);
+// Detecta una IPv4 local e ignora interfaces virtuales habituales.
+function detectHostIp() {
+  for (const [name, addresses] of Object.entries(os.networkInterfaces())) {
+    if (/^(docker|br-|veth|virbr)/i.test(name)) continue;
 
-  if (/^[-A-Za-z0-9_.:@/+]*$/.test(text)) return text;
-  if (!text.includes("'")) return `'${text}'`;
-  if (!text.includes('"') && !text.includes('\\')) return `"${text}"`;
-  if (!text.includes('`')) return `\`${text}\``;
+    const found = (addresses ?? []).find(
+      (address) => address.family === 'IPv4' && !address.internal,
+    );
 
-  throw new Error('El valor no puede mezclar comillas simples, dobles y acentos graves.');
+    if (found) return found.address;
+  }
+
+  return undefined;
 }
 
 function readEnvFile() {
-  return fs.existsSync(envPath) ? parseEnv(fs.readFileSync(envPath, 'utf8')) : {};
+  if (!fs.existsSync(envPath)) return {};
+
+  return parseEnv(fs.readFileSync(envPath, 'utf8'));
 }
 
-function writeEnvFile(settings) {
-  const values = readEnvFile();
+// Escribe el .env siguiendo el orden de .env.example.
+function writeEnvFile(settings = {}) {
+  const current = readEnvFile();
+  const values = { ...current };
 
   for (const [key, envName] of Object.entries(ENV_KEYS)) {
-    values[envName] = String(settings[key]);
+    if (settings[key] !== undefined) {
+      values[envName] = String(settings[key]);
+    }
   }
 
-  const lines = Object.entries(values).map(([name, value]) => `${name}=${toEnvValue(value)}`);
+  // Valores predeterminados para una instalación nueva.
+  const defaults = {
+    HOST_IP: '',
+    DB_HOST: 'localhost',
+    DB_PORT: '5432',
+    DB_USER: 'goml',
+    DB_PASSWORD: '',
+    DB_DATABASE: 'goml_db',
+    APP_PORT: '3000',
+    GAMES_PORT: '3001',
+    GUEST_REGISTER: 'true',
+    OWNER_USER: 'owner',
+    OWNER_PASSWORD: '',
+    LIMIT_USERS: 'false',
+    MAX_USERS: '100',
+    LIMIT_GAMES: 'false',
+    GAMES_QTY: '10',
+    MAX_MBS: '10240',
+    PUBLIC_MODE: 'false',
+    GAMES_ORIGIN: '',
+  };
 
-  fs.writeFileSync(envPath, lines.join('\n') + '\n', { encoding: 'utf8', mode: 0o600 });
+  for (const [key, value] of Object.entries(defaults)) {
+    if (values[key] === undefined) {
+      values[key] = value;
+    }
+  }
+
+  const lines = [];
+  const written = new Set();
+
+  function addVariable(name) {
+    lines.push(`${name}=${toEnvValue(values[name] ?? '')}`);
+    written.add(name);
+  }
+
+  lines.push('# IP de tu máquina en la red local');
+  addVariable('HOST_IP');
+
+  lines.push('');
+  lines.push('# Base de datos. Elegir antes del primer arranque');
+  addVariable('DB_HOST');
+  addVariable('DB_PORT');
+  addVariable('DB_USER');
+  addVariable('DB_PASSWORD');
+  addVariable('DB_DATABASE');
+
+  lines.push('');
+  lines.push('# Puertos de GOML y de los juegos');
+  addVariable('APP_PORT');
+  addVariable('GAMES_PORT');
+
+  lines.push('');
+  lines.push('# Permitir que cualquiera cree una cuenta (true / false)');
+  addVariable('GUEST_REGISTER');
+
+  lines.push('');
+  lines.push('# Propietario inicial (solo se usa si la base no tiene usuarios)');
+  addVariable('OWNER_USER');
+  addVariable('OWNER_PASSWORD');
+
+  lines.push('');
+  lines.push('# Limitación de usuarios');
+  addVariable('LIMIT_USERS');
+  addVariable('MAX_USERS');
+
+  lines.push('');
+  lines.push('# Límites de subida por usuario (no aplican a usuarios de confianza ni al owner)');
+  addVariable('LIMIT_GAMES');
+  addVariable('GAMES_QTY');
+  addVariable('MAX_MBS');
+
+  lines.push('');
+  lines.push('# Clave de sesión personalizada (opcional)');
+
+  if (values.SESSION_SECRET !== undefined) {
+    addVariable('SESSION_SECRET');
+  } else {
+    lines.push('# SESSION_SECRET=');
+  }
+
+  lines.push('');
+  lines.push('# Modo público (internet, detrás de un proxy con HTTPS)');
+  addVariable('PUBLIC_MODE');
+  addVariable('GAMES_ORIGIN');
+
+  // Conserva cualquier variable adicional que ya existiera en el .env.
+  const extraVariables = Object.keys(values).filter((name) => !written.has(name));
+
+  if (extraVariables.length > 0) {
+    lines.push('');
+    lines.push('# Otras variables de configuración');
+
+    for (const name of extraVariables) {
+      addVariable(name);
+    }
+  }
+
+  lines.push('');
+
+  const temporaryPath = `${envPath}.tmp`;
+
+  try {
+    fs.writeFileSync(temporaryPath, lines.join('\n'), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+
+    fs.renameSync(temporaryPath, envPath);
+    fs.chmodSync(envPath, 0o600);
+  } catch (error) {
+    if (fs.existsSync(temporaryPath)) {
+      fs.rmSync(temporaryPath, { force: true });
+    }
+
+    throw error;
+  }
 }
 
 async function createSettings() {
@@ -135,52 +331,52 @@ Introduce los datos de conexión a PostgreSQL.
 Presiona ENTER para utilizar el valor indicado entre corchetes.
 `);
 
-  const db_host = await askDefault('Host de PostgreSQL', 'localhost');
+  const db_host = (await askDefault('Host de PostgreSQL', 'localhost')).trim();
+  const db_port = await askPort('Puerto de PostgreSQL', 5432);
+  const db_user = (await askDefault('Usuario de PostgreSQL', 'goml')).trim();
+  const db_password = await askPassword('Contraseña de PostgreSQL: ');
+  const db_database = (await askDefault('Base de datos', 'goml_db')).trim();
 
-  const db_port = await askDefault('Puerto de PostgreSQL', 5432);
-
-  const db_user = await askDefault('Usuario de PostgreSQL', 'goml');
-
-  const db_password = await ask('Contraseña de PostgreSQL: ');
-
-  const db_database = await askDefault('Base de datos', 'goml_db');
+  if (!db_host || !db_user || !db_database) {
+    throw new Error('El host, usuario y nombre de la base de datos son obligatorios.');
+  }
 
   console.log('');
 
-  const app_port = await askDefault('Puerto de GamesOnMyLAN', 3000);
-
-  let games_port;
-
-  while (true) {
-    games_port = await askDefault('Puerto del servidor de juegos', 3001);
-
-    if (Number(games_port) !== Number(app_port)) break;
-
-    console.log('Debe ser distinto al puerto de la app. Inténtalo de nuevo.');
-  }
+  const app_port = await askPort('Puerto de GamesOnMyLAN', 3000);
+  const games_port = await askPort('Puerto del servidor de juegos', 3001, app_port);
 
   const guest_register = await askBoolean('¿Permitir registro de invitados?', true);
 
+  const host_ip = detectHostIp();
+
+  console.log(
+    host_ip
+      ? `\nIP detectada: ${host_ip}`
+      : '\nNo se detectó la IP; cert.js la buscará al generar el certificado.',
+  );
+
   const settings = {
     db_host,
-
-    db_port: Number(db_port),
-
+    db_port,
     db_user,
-
     db_password,
-
     db_database,
 
-    app_port: Number(app_port),
-
-    games_port: Number(games_port),
+    app_port,
+    games_port,
 
     guest_register,
+    host_ip,
+
+    limit_users: false,
+    max_users: 100,
+
+    public_mode: false,
+    games_origin: '',
   };
 
-  // SESSION_SECRET ya no se escribe aquí: GOML genera una clave
-  // al azar la primera vez que arranca y la guarda en data/session_secret.
+  // No modifica las credenciales del propietario durante la configuración general.
   writeEnvFile(settings);
 
   console.log('\n✓ .env creado correctamente.');
@@ -201,7 +397,7 @@ function loadSettings() {
 
 async function configureSettings() {
   if (!fs.existsSync(envPath)) {
-    return await createSettings();
+    return createSettings();
   }
 
   console.log(`
@@ -221,21 +417,16 @@ Ya existe un archivo .env.
 
     if (option === '1') {
       console.log('\n✓ Se utilizará la configuración existente.');
-
       return loadSettings();
     }
 
     if (option === '2') {
-      console.log('\nSe creará una nueva configuración.');
-
-      // writeEnvFile conserva SESSION_SECRET y cualquier otra
-      // variable que ya estuviera en el .env
-      return await createSettings();
+      console.log('\nSe actualizará la configuración.');
+      return createSettings();
     }
 
     if (option === '3') {
       console.log('\nInstalación cancelada.');
-
       process.exit(0);
     }
 
@@ -244,19 +435,13 @@ Ya existe un archivo .env.
 }
 
 async function connectDatabase() {
-  /*
-   * pool.js lee la configuración (getSettings.js) al importarse,
-   * por lo tanto el .env debe existir
-   * antes de importar este módulo.
-   */
-
+  // pool.js lee la configuración al importarse.
   const { default: db } = await import('../src/database/pool.js');
 
   try {
     const result = await db.query('SELECT current_database();');
 
-    console.log(`✓ Conectado a PostgreSQL.`);
-
+    console.log('✓ Conectado a PostgreSQL.');
     console.log(`  Base de datos: ${result.rows[0].current_database}`);
 
     return db;
@@ -268,18 +453,10 @@ async function connectDatabase() {
 
 No se pudo conectar a PostgreSQL.
 
-Comprueba:
+Comprueba que PostgreSQL esté instalado y ejecutándose,
+y revisa DB_HOST, DB_PORT, DB_USER, DB_PASSWORD y DB_DATABASE.
 
-- Que PostgreSQL esté instalado.
-- Que PostgreSQL esté ejecutándose.
-- Que db_host sea correcto.
-- Que db_port sea correcto.
-- Que db_user sea correcto.
-- Que db_password sea correcto.
-- Que db_database exista.
-
-Error:
-${error.message}
+Error: ${error.message}
 `);
 
     throw error;
@@ -300,10 +477,39 @@ async function newInstallation(db) {
   }
 
   const schema = fs.readFileSync(schemaPath, 'utf8');
-
   await db.query(schema);
 
   console.log('✓ Base de datos preparada.');
+
+  console.log(`
+[2/2] Configurar propietario inicial
+`);
+
+  // Siempre se solicitan las credenciales iniciales.
+  const username = (await askDefault('Usuario owner inicial', 'owner')).trim();
+
+  if (!username) {
+    throw new Error('El nombre de usuario no puede estar vacío.');
+  }
+
+  if (username.length > 50) {
+    throw new Error('El nombre de usuario no puede superar los 50 caracteres.');
+  }
+
+  const password = await askPassword('Contraseña owner inicial: ');
+
+  if (!password) {
+    throw new Error('La contraseña no puede estar vacía.');
+  }
+
+  // Se guardan antes de comprobar si se creará el usuario.
+  // Así también estarán disponibles para Docker si ya existen usuarios.
+  writeEnvFile({
+    owner_user: username,
+    owner_password: password,
+  });
+
+  console.log('✓ Credenciales iniciales guardadas en .env.');
 
   const result = await db.query('SELECT COUNT(*) FROM users;');
 
@@ -313,56 +519,49 @@ Ya existen usuarios en la base de datos.
 
 No se creará otro usuario owner.
 
-La instalación continuará sin crear un usuario inicial.
+Las credenciales iniciales introducidas
+se conservaron en el archivo .env.
 `);
-
     return;
   }
 
-  console.log(`
-[2/2] Crear propietario inicial
+  const createOwner = await askBoolean('¿Crear este usuario como propietario inicial?', true);
+
+  if (!createOwner) {
+    console.log(`
+No se creó el propietario en PostgreSQL.
+
+Las credenciales introducidas se mantienen
+en el archivo .env.
 `);
-
-  const username = await ask('Usuario: ');
-
-  if (!username.trim()) {
-    throw new Error('El nombre de usuario no puede estar vacío.');
-  }
-
-  const password = await ask('Contraseña: ');
-
-  if (!password) {
-    throw new Error('La contraseña no puede estar vacía.');
+    return;
   }
 
   const hash = await bcrypt.hash(password, 12);
 
   await db.query(
     `
-        INSERT INTO users
+      INSERT INTO users (username, password_hash, role_id, trusted)
+      VALUES (
+        $1,
+        $2,
         (
-            username,
-            password_hash,
-            role_id
-        )
-        VALUES
-        (
-            $1,
-            $2,
-            (
-                SELECT id_role
-                FROM roles
-                WHERE role_name = 'owner'
-            )
-        );
-        `,
-    [username.trim(), hash],
+          SELECT id_role
+          FROM roles
+          WHERE role_name = 'owner'
+        ),
+        TRUE
+      );
+    `,
+    [username, hash],
   );
 
   console.log('\n✓ Owner creado correctamente.');
 }
 
 async function restoreInstallation() {
+  const settings = loadSettings();
+
   console.log(`
 ====================================
        Restauración
@@ -374,28 +573,12 @@ ni los datos de la base de datos.
 Debes restaurar manualmente el respaldo
 de PostgreSQL antes de iniciar GOML.
 
-Pasos recomendados:
+Configuración actual:
 
-1. Asegúrate de que PostgreSQL esté instalado
-   y funcionando.
-
-2. Comprueba que la base de datos indicada
-   en el .env exista.
-
-3. Restaura el respaldo de PostgreSQL
-   sobre esa base de datos.
-
-4. Comprueba que la restauración haya
-   finalizado correctamente.
-
-5. Inicia GamesOnMyLAN.
-
-La configuración actual es:
-
-    Host:      ${loadSettings().db_host}
-    Puerto:    ${loadSettings().db_port}
-    Usuario:   ${loadSettings().db_user}
-    Base datos:${loadSettings().db_database}
+    Host:       ${settings.db_host ?? ''}
+    Puerto:     ${settings.db_port ?? ''}
+    Usuario:    ${settings.db_user ?? ''}
+    Base datos: ${settings.db_database ?? ''}
 
 IMPORTANTE:
 
@@ -452,27 +635,21 @@ async function main() {
 `);
 
     console.log('[1/4] Configurando GamesOnMyLAN...');
-
     await configureSettings();
 
     console.log('\n[2/4] Seleccionando tipo de instalación...');
-
     const installationType = await askInstallationType();
 
     if (installationType === 'restore') {
       console.log('\n[3/4] Preparando restauración...');
-
       await restoreInstallation();
-
       return;
     }
 
     console.log('\n[3/4] Comprobando PostgreSQL...');
-
     db = await connectDatabase();
 
     console.log('\n[4/4] Instalando GamesOnMyLAN...');
-
     await newInstallation(db);
 
     showFinalMessage();
@@ -484,6 +661,8 @@ async function main() {
 
 ${error.message}
 `);
+
+    process.exitCode = 1;
   } finally {
     rl.close();
 
