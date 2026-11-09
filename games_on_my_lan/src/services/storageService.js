@@ -6,6 +6,7 @@ import { Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 import { assertPngFile } from '../utils/validators.js';
 import { MAX_IMAGE_BYTES } from '../utils/limits.js';
+import { QuotaError } from '../utils/quota.js';
 import { moveFile } from '../utils/moveFile.js';
 
 const DATA_PATH = path.join(process.cwd(), 'data');
@@ -17,9 +18,17 @@ const MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
 // ---------- Funciones privadas (no se exportan) ----------
 
 // Extracción con protección Zip Slip, reutilizable para juegos nuevos y reemplazos.
-async function extractZipSafely(zipFilePath, destFolder) {
+// maxBytes: tope de lo que puede ocupar descomprimido (el cupo del usuario, si tiene).
+// Devuelve los bytes reales extraídos.
+async function extractZipSafely(zipFilePath, destFolder, maxBytes = MAX_TOTAL_BYTES) {
   const resolvedRoot = path.resolve(destFolder);
+  const limit = Math.min(maxBytes, MAX_TOTAL_BYTES);
   const directory = await unzipper.Open.file(zipFilePath);
+
+  const tooBig = () =>
+    limit < MAX_TOTAL_BYTES
+      ? new QuotaError('Superarías tu límite de almacenamiento', 413)
+      : new Error('ZIP demasiado grande al descomprimir');
 
   // Capa 2: rechazo rápido según lo que el zip DECLARA
   if (directory.files.length > MAX_FILES) {
@@ -28,8 +37,8 @@ async function extractZipSafely(zipFilePath, destFolder) {
 
   const declaredTotal = directory.files.reduce((sum, f) => sum + (f.uncompressedSize || 0), 0);
 
-  if (declaredTotal > MAX_TOTAL_BYTES) {
-    throw new Error('ZIP demasiado grande al descomprimir');
+  if (declaredTotal > limit) {
+    throw tooBig();
   }
 
   // Capa 3: conteo de bytes REALES (el tamaño declarado se puede falsificar)
@@ -63,8 +72,8 @@ async function extractZipSafely(zipFilePath, destFolder) {
             return cb(new Error('ZIP inválido: un archivo excede su tamaño declarado'));
           }
 
-          if (total > MAX_TOTAL_BYTES) {
-            return cb(new Error('ZIP demasiado grande al descomprimir'));
+          if (total > limit) {
+            return cb(tooBig());
           }
 
           cb(null, chunk);
@@ -73,6 +82,8 @@ async function extractZipSafely(zipFilePath, destFolder) {
       fs.createWriteStream(destPath),
     );
   }
+
+  return total;
 }
 
 // Respaldo: el middleware ya corta las subidas que superan el límite
@@ -130,28 +141,30 @@ async function normalizeGameFolder(gameFolder, entry_file) {
 
 // ---------- Funciones públicas ----------
 
-async function extractGame(zipFile, id_game, entry_file) {
+async function extractGame(zipFile, id_game, entry_file, { maxBytes } = {}) {
   const gameFolder = path.join(DATA_PATH, 'games', String(id_game));
   await fsp.mkdir(gameFolder, { recursive: true });
 
-  await extractZipSafely(zipFile.path, gameFolder);
+  const bytes = await extractZipSafely(zipFile.path, gameFolder, maxBytes);
 
   await normalizeGameFolder(gameFolder, entry_file);
   await fsp.unlink(zipFile.path);
-  return gameFolder;
+  return { gameFolder, bytes };
 }
 
 // Para reemplazar archivos de un juego que YA existe: extrae a una carpeta
 // temporal primero. Solo si todo sale bien, borra la carpeta real y pone
 // la nueva en su lugar. Si algo falla, el juego actual queda intacto.
-async function replaceGameFiles(id_game, zipFile, entry_file) {
+async function replaceGameFiles(id_game, zipFile, entry_file, { maxBytes } = {}) {
   const finalFolder = path.join(DATA_PATH, 'games', String(id_game));
   const stagingFolder = path.join(DATA_PATH, 'games', `${id_game}_staging_${Date.now()}`);
 
   await fsp.mkdir(stagingFolder, { recursive: true });
 
+  let bytes;
+
   try {
-    await extractZipSafely(zipFile.path, stagingFolder);
+    bytes = await extractZipSafely(zipFile.path, stagingFolder, maxBytes);
     await normalizeGameFolder(stagingFolder, entry_file);
   } catch (error) {
     await fsp.rm(stagingFolder, { recursive: true, force: true });
@@ -162,7 +175,7 @@ async function replaceGameFiles(id_game, zipFile, entry_file) {
   await fsp.rename(stagingFolder, finalFolder);
   await fsp.unlink(zipFile.path);
 
-  return finalFolder;
+  return { finalFolder, bytes };
 }
 
 async function storeThumbnail(thumbnailFile, id_game) {

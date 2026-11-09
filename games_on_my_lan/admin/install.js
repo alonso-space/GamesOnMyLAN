@@ -162,6 +162,10 @@ const ENV_KEYS = {
   limit_users: 'LIMIT_USERS',
   max_users: 'MAX_USERS',
 
+  limit_games: 'LIMIT_GAMES',
+  games_qty: 'GAMES_QTY',
+  max_mbs: 'MAX_MBS',
+
   public_mode: 'PUBLIC_MODE',
   games_origin: 'GAMES_ORIGIN',
 };
@@ -213,6 +217,9 @@ function writeEnvFile(settings = {}) {
     OWNER_PASSWORD: '',
     LIMIT_USERS: 'false',
     MAX_USERS: '100',
+    LIMIT_GAMES: 'false',
+    GAMES_QTY: '10',
+    MAX_MBS: '10240',
     PUBLIC_MODE: 'false',
     GAMES_ORIGIN: '',
   };
@@ -260,6 +267,12 @@ function writeEnvFile(settings = {}) {
   lines.push('# Limitación de usuarios');
   addVariable('LIMIT_USERS');
   addVariable('MAX_USERS');
+
+  lines.push('');
+  lines.push('# Límites de subida por usuario (no aplican a usuarios de confianza ni al owner)');
+  addVariable('LIMIT_GAMES');
+  addVariable('GAMES_QTY');
+  addVariable('MAX_MBS');
 
   lines.push('');
   lines.push('# Clave de sesión personalizada (opcional)');
@@ -528,7 +541,7 @@ en el archivo .env.
 
   await db.query(
     `
-      INSERT INTO users (username, password_hash, role_id)
+      INSERT INTO users (username, password_hash, role_id, trusted)
       VALUES (
         $1,
         $2,
@@ -536,7 +549,8 @@ en el archivo .env.
           SELECT id_role
           FROM roles
           WHERE role_name = 'owner'
-        )
+        ),
+        TRUE
       );
     `,
     [username, hash],

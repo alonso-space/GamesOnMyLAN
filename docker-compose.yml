@@ -39,6 +39,9 @@ services:
       OWNER_PASSWORD: ${OWNER_PASSWORD:-}
       LIMIT_USERS: ${LIMIT_USERS:-false}
       MAX_USERS: ${MAX_USERS:-100}
+      LIMIT_GAMES: ${LIMIT_GAMES:-false}
+      GAMES_QTY: ${GAMES_QTY:-10}
+      MAX_MBS: ${MAX_MBS:-10240}
     ports:
       - "${APP_PORT:-3000}:${APP_PORT:-3000}"
       - "${GAMES_PORT:-3001}:${GAMES_PORT:-3001}"

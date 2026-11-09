@@ -11,10 +11,12 @@ fs.mkdirSync(TEMP_DIR, { recursive: true });
 // POR CAMPO. Multer solo permite un límite global por instancia, y como el
 // juego (1 GB) y la miniatura viajan en la misma petición, la miniatura
 // podría llegar a pesar 1 GB. Aquí se corta en cuanto supera su máximo.
+// Cada límite puede ser un número o una función (req) => número.
 function createStorage(fieldLimits) {
   return {
     _handleFile(req, file, cb) {
-      const limit = fieldLimits[file.fieldname];
+      const spec = fieldLimits[file.fieldname];
+      const limit = typeof spec === 'function' ? spec(req) : spec;
       const filename = crypto.randomBytes(16).toString('hex');
       const filePath = path.join(TEMP_DIR, filename);
       const out = fs.createWriteStream(filePath);
@@ -35,9 +37,14 @@ function createStorage(fieldLimits) {
       file.stream.on('data', (chunk) => {
         size += chunk.length;
 
-        if (limit && size > limit) {
+        if (limit !== undefined && size > limit) {
           const err = new Error('El archivo es demasiado grande');
           err.code = 'LIMIT_FILE_SIZE';
+
+          if (file.fieldname === 'gameFile' && limit < MAX_GAME_BYTES) {
+            err.publicMessage = 'Superarías tu límite de almacenamiento';
+          }
+
           fail(err);
         }
       });
@@ -75,7 +82,8 @@ function createStorage(fieldLimits) {
 // Juegos (.zip) y miniaturas (.png)
 const upload = multer({
   storage: createStorage({
-    gameFile: MAX_GAME_BYTES,
+    // Con límites activos, el zip no puede superar el espacio que le queda al usuario
+    gameFile: (req) => Math.min(MAX_GAME_BYTES, req.quota?.remainingBytes ?? MAX_GAME_BYTES),
     thumbnail: MAX_IMAGE_BYTES,
   }),
   limits: {

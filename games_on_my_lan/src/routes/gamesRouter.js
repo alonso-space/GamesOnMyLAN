@@ -7,6 +7,7 @@ import {
   requireOwnership,
   requireCanDelete,
 } from '../middlewares/auth.js';
+import { requireGameQuota } from '../middlewares/quota.js';
 import upload from '../middlewares/upload.js';
 
 const router = express.Router();
@@ -22,6 +23,7 @@ router.post(
   '/',
   requireLogin,
   requireRole('member', 'admin', 'owner'),
+  requireGameQuota(),
   gameUploads,
   gamesController.createGame,
 );
@@ -35,7 +37,14 @@ router.get(
 );
 
 router.get('/:gameId', gamesController.playGame);
-router.put('/:gameId', requireLogin, requireOwnership, gameUploads, gamesController.updateGame);
+router.put(
+  '/:gameId',
+  requireLogin,
+  requireOwnership,
+  requireGameQuota({ replacing: true }),
+  gameUploads,
+  gamesController.updateGame,
+);
 router.delete('/:gameId', requireLogin, requireCanDelete, gamesController.deleteGame);
 
 export default router;

@@ -49,6 +49,9 @@
 
                     <td>
                         <span class="role-badge">{{role_name}}</span>
+                        {{#if @root.canManageRoles}}{{#if trusted}}
+                        <span class="role-badge">de confianza</span>
+                        {{/if}}{{/if}}
                     </td>
 
                     <td>
@@ -67,6 +70,20 @@
                             <button type="submit" class="btn btn-outline-light"
                                 style="font-size:0.8rem;">
                                 {{newRoleLabel}}
+                            </button>
+
+                        </form>
+                        {{/if}}
+
+                        {{#if canChangeTrust}}
+                        <form action="/users/{{id_user}}/trusted" method="POST"
+                            data-confirm="¿Cambiar la confianza de «{{username}}»?">
+
+                            <input type="hidden" name="trusted" value="{{newTrusted}}">
+
+                            <button type="submit" class="btn btn-outline-light"
+                                style="font-size:0.8rem;">
+                                {{newTrustedLabel}}
                             </button>
 
                         </form>

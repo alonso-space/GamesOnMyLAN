@@ -6,10 +6,22 @@
         ⬆️ Subir nuevo juego
     </h1>
 
+    {{#if quota}}
+    <p class="field-hint">
+        Usas {{quota.usedMb}} de {{quota.maxMb}} MB y {{quota.usedGames}} de {{quota.maxGames}} juegos.
+    </p>
+    {{/if}}
+
+    {{#if quota.blockedMessage}}
+    <div class="alert alert-danger" role="alert">{{quota.blockedMessage}}</div>
+    {{/if}}
+
     <form
         action="/games"
         method="POST"
-        enctype="multipart/form-data">
+        enctype="multipart/form-data"
+        data-upload-form
+        data-max-bytes="{{maxUploadBytes}}">
 
         <div class="row g-4">
 
@@ -93,7 +105,8 @@
 
                 <button
                     class="btn btn-primary"
-                    type="submit">
+                    type="submit"
+                    {{#if quota.blockedMessage}}disabled{{/if}}>
                     ⬆️ Registrar juego
                 </button>
             </div>

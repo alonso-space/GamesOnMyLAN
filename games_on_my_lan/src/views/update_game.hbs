@@ -9,7 +9,9 @@
     <form
         action="/games/{{game.id_game}}?_method=PUT"
         method="POST"
-        enctype="multipart/form-data">
+        enctype="multipart/form-data"
+        data-upload-form
+        data-max-bytes="{{maxUploadBytes}}">
 
         <div class="row g-4">
 

@@ -94,8 +94,12 @@ app.use((err, req, res, next) => {
     return next(err);
   }
 
+  if (err.name === 'QuotaError') {
+    return res.status(err.status).send(err.message);
+  }
+
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(413).send('El archivo es demasiado grande');
+    return res.status(413).send(err.publicMessage ?? 'El archivo es demasiado grande');
   }
 
   if (err.name === 'MulterError' || err.status === 400) {

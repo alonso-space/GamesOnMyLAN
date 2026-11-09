@@ -64,6 +64,7 @@ All settings live in the `.env` file (see [`.env.example`](.env.example)).
 | `GAMES_PORT` | Port where games are served | `3001` |
 | `GUEST_REGISTER` | Allow anyone to create an account (`true` / `false`) | `true` |
 | `LIMIT_USERS`, `MAX_USERS` | Cap the number of accounts: with `LIMIT_USERS=true`, registration closes once `MAX_USERS` is reached (must be an integer > 0) | `false`, `100` |
+| `LIMIT_GAMES`, `GAMES_QTY`, `MAX_MBS` | Per-user upload limits: with `LIMIT_GAMES=true`, each user can upload at most `GAMES_QTY` games and `MAX_MBS` megabytes in total (both must be integers > 0). The owner can mark users as trusted from the Users page to exempt them | `false`, `10`, `10240` |
 | `OWNER_USER`, `OWNER_PASSWORD` | Initial owner, used only when the database has no users | none |
 | `SESSION_SECRET` | Optional. If empty, a random one is generated on first start | empty |
 | `PUBLIC_MODE`, `GAMES_ORIGIN` | Internet deployment behind a proxy with HTTPS. Leave empty on a LAN | empty |

@@ -1,22 +1,114 @@
 import pool from '../database/pool.js';
+import { QuotaError, computeQuota, quotaViolation } from '../utils/quota.js';
 
-async function createGame(game) {
-  const result = await pool.query(
+// Clave del lock de Postgres que serializa las comprobaciones de cupo de un mismo usuario
+const QUOTA_LOCK_KEY = 7301;
+
+// Ejecuta fn dentro de una transacción con un lock por usuario. Así dos subidas
+// simultáneas del mismo usuario no pueden comprobar el cupo a la vez y pasarse del límite.
+async function withUserLock(userId, fn) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock($1, $2)', [QUOTA_LOCK_KEY, userId]);
+
+    const result = await fn(client);
+
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Juegos y bytes que ya ocupa un usuario. excludeGameId: ignora un juego (el que se reemplaza).
+async function getUsage(authorId, excludeGameId = null, db = pool) {
+  const result = await db.query(
+    `
+        SELECT
+            COUNT(*)::int AS games,
+            COALESCE(SUM(size_bytes), 0)::float8 AS bytes
+        FROM games
+        WHERE author_id = $1
+          AND ($2::int IS NULL OR id_game <> $2);
+        `,
+    [authorId, excludeGameId],
+  );
+
+  return result.rows[0];
+}
+
+function insertGame(db, game, sizeBytes) {
+  return db.query(
     `
         INSERT INTO games
         (
             game_name,
             game_description,
             entry_file,
-            author_id
+            author_id,
+            size_bytes
         )
-        VALUES ($1,$2,$3,$4)
+        VALUES ($1,$2,$3,$4,$5)
         RETURNING *;
         `,
-    [game.game_name, game.game_description, game.entry_file, game.author_id],
+    [game.game_name, game.game_description, game.entry_file, game.author_id, sizeBytes],
   );
+}
 
-  return result.rows[0];
+// Sin quota crea el juego sin más. Con quota (límites activos) comprueba el cupo dentro del
+// lock y RESERVA todo el espacio que le queda al usuario en size_bytes mientras se extrae
+// el zip; setGameSize deja después el tamaño real. El tope de extracción es esa reserva.
+async function createGame(game, quota = null) {
+  if (!quota) {
+    const result = await insertGame(pool, game, 0);
+    return result.rows[0];
+  }
+
+  return withUserLock(game.author_id, async (client) => {
+    const usage = await getUsage(game.author_id, null, client);
+    const current = computeQuota(quota, usage);
+    const violation = quotaViolation(current);
+
+    if (violation) throw new QuotaError(violation);
+
+    const result = await insertGame(client, game, current.remainingBytes);
+    return result.rows[0];
+  });
+}
+
+// Igual que createGame pero para reemplazar el zip de un juego existente. Devuelve el tamaño
+// anterior (para restaurarlo si falla) y el máximo que puede ocupar el zip nuevo.
+async function reserveReplacement(gameId, authorId, quota) {
+  return withUserLock(authorId, async (client) => {
+    const usage = await getUsage(authorId, gameId, client);
+    const current = computeQuota(quota, usage);
+    const violation = quotaViolation(current, { checkGames: false });
+
+    if (violation) throw new QuotaError(violation);
+
+    const previous = await client.query('SELECT size_bytes FROM games WHERE id_game = $1', [
+      gameId,
+    ]);
+
+    await client.query('UPDATE games SET size_bytes = $1 WHERE id_game = $2', [
+      current.remainingBytes,
+      gameId,
+    ]);
+
+    return {
+      previousBytes: Number(previous.rows[0]?.size_bytes ?? 0),
+      budget: current.remainingBytes,
+    };
+  });
+}
+
+async function setGameSize(id_game, sizeBytes) {
+  await pool.query('UPDATE games SET size_bytes = $1 WHERE id_game = $2', [sizeBytes, id_game]);
 }
 
 async function getAllGames(userId) {
@@ -128,6 +220,9 @@ async function countAllGames() {
 export default {
   countAllGames,
   createGame,
+  getUsage,
+  reserveReplacement,
+  setGameSize,
   getAllGames,
   getGameById,
   getGamesByAuthorId,
